@@ -1,0 +1,8 @@
+{
+  "venv": "venv",
+  "venvPath": ".",
+  "pythonVersion": "3.8",
+  "reportMissingImports": true,
+  "include": ["."],
+  "exclude": ["**/__pycache__", "venv"]
+}

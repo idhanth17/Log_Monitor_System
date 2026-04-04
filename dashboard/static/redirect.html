@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Redirecting...</title></head>
+<body style="background:#050712; color:#94a3b8; font-family:sans-serif; display:flex; align-items:center; justify-content:center; min-height:100vh;">
+    <p>Loading application...</p>
+    <script>
+        const t = localStorage.getItem('auth_token');
+        const r = localStorage.getItem('auth_role');
+        if (t && r === 'admin') window.location.replace('/admin.html');
+        else if (t) window.location.replace('/index.html');
+        else window.location.replace('/login.html');
+    </script>
+</body>
+</html>

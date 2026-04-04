@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard — Log Monitor</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-deep: #050712;
+            --bg-card: rgba(13, 17, 34, 0.7);
+            --border-glass: rgba(255, 255, 255, 0.08);
+            --accent-violet: #8b5cf6;
+            --accent-green: #34d399;
+            --text-main: #e2e8f0;
+            --text-muted: #94a3b8;
+            --status-red: #ef4444;
+            --border-violet: rgba(139, 92, 246, 0.25);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background-color: var(--bg-deep);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.1) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(52, 211, 153, 0.05) 0px, transparent 50%);
+            color: var(--text-main);
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+        }
+
+        nav {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 1.25rem 2rem;
+            background: rgba(8, 10, 22, 0.8);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border-glass);
+            position: sticky; top: 0; z-index: 100;
+        }
+        .nav-brand { font-weight: 600; font-size: 1.2rem; letter-spacing: -0.5px; display: flex; align-items: center; gap: 0.75rem; }
+        .nav-brand span { color: var(--accent-violet); }
+        .nav-right { display: flex; align-items: center; gap: 1.5rem; }
+        .admin-badge { background: rgba(139, 92, 246, 0.15); color: #c4b5fd; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; border: 1px solid rgba(139, 92, 246, 0.3); }
+        .btn-sm { background: transparent; border: 1px solid rgba(255,255,255,0.1); color: var(--text-muted); padding: 0.4rem 0.9rem; border-radius: 8px; cursor: pointer; transition: all 0.2s; font-size: 0.85rem; }
+        .btn-sm:hover { color: white; background: rgba(255,255,255,0.05); }
+
+        .tab-nav { display: flex; gap: 2.5rem; padding: 0 2rem; border-bottom: 1px solid var(--border-glass); background: rgba(8, 10, 22, 0.4); }
+        .tab-btn {
+            background: none; border: none; padding: 1.1rem 0; color: var(--text-muted);
+            font-family: 'Outfit', sans-serif; font-size: 0.9rem; font-weight: 500;
+            cursor: pointer; position: relative; border-bottom: 2px solid transparent;
+            transition: all 0.2s; display: flex; align-items: center; gap: 0.6rem;
+        }
+        .tab-btn:hover { color: var(--text-main); }
+        .tab-btn.active { color: #c4b5fd; border-bottom-color: var(--accent-violet); }
+        .tab-badge { background: #ef4444; color: #fff; border-radius: 10px; padding: 0.1rem 0.45rem; font-size: 0.65rem; font-weight: 600; }
+
+        main { max-width: 1400px; margin: 0 auto; padding: 2rem; }
+        .tab-panel { display: none; }
+        .tab-panel.active { display: block; animation: fadeIn 0.3s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+        .dashboard-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; }
+        .glass-card { background: var(--bg-card); border: 1px solid var(--border-glass); border-radius: 20px; padding: 1.75rem; backdrop-filter: blur(15px); margin-bottom: 1.5rem; }
+        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+        .card-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-muted); }
+
+        /* FORM STYLES */
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+        .form-group label { display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem; text-transform: uppercase; }
+        select, input { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass); color: #fff; padding: 0.7rem 1rem; border-radius: 10px; outline: none; font-family: inherit; }
+        select:focus, input:focus { border-color: var(--accent-violet); }
+        .btn-primary { background: linear-gradient(135deg, #5b21b6, #8b5cf6); color: #fff; padding: 0.8rem 1.5rem; border-radius: 12px; border: none; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 5px 15px rgba(139,92,246,0.3); }
+
+        /* STATS */
+        .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.25rem; margin-bottom: 2rem; }
+        .stat-card { background: var(--bg-card); border: 1px solid var(--border-glass); border-radius: 18px; padding: 1.5rem; }
+        .stat-val { font-size: 2.2rem; font-weight: 600; margin-top: 0.5rem; }
+        .stat-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); }
+
+        /* TABLES */
+        .scroll-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--border-glass); }
+        table { width: 100%; border-collapse: collapse; min-width: 800px; }
+        th, td { padding: 1rem; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.03); }
+        th { background: rgba(8,10,22,0.9); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); }
+        td { font-size: 0.9rem; }
+        tr:hover { background: rgba(255,255,255,0.02); }
+
+        /* BADGES */
+        .badge { padding: 0.25rem 0.65rem; border-radius: 8px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; }
+        .bg-public { background: rgba(52, 211, 153, 0.15); color: #34d399; }
+        .bg-private { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+        .bg-protected { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+        .bg-error { background: rgba(239, 68, 68, 0.15); color: #f87171; }
+        .bg-info { background: rgba(139, 92, 246, 0.15); color: #c4b5fd; }
+
+        .kick-btn { background: rgba(239, 68, 68, 0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.2); padding: 0.35rem 0.7rem; border-radius: 8px; cursor: pointer; }
+        .approve-btn { background: rgba(52, 211, 153, 0.1); color: #34d399; border: 1px solid rgba(52,211,153,0.2); padding: 0.35rem 0.7rem; border-radius: 8px; cursor: pointer; margin-right: 0.4rem; }
+        .deny-btn { background: rgba(239, 68, 68, 0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.2); padding: 0.35rem 0.7rem; border-radius: 8px; cursor: pointer; }
+        
+        .user-tag { background: rgba(255,255,255,0.05); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; border: 1px solid var(--border-glass); }
+        .live-dot { width: 8px; height: 8px; background: #34d399; border-radius: 50%; display: inline-block; margin-right: 0.5rem; box-shadow: 0 0 8px #34d399; }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="nav-brand">⬡ <span>SecureLog</span> Infrastructure</div>
+        <div class="nav-right">
+            <span class="admin-badge">PLATFORM ADMIN</span>
+            <button class="btn-sm" onclick="logout()">Sign Out</button>
+        </div>
+    </nav>
+
+    <div class="tab-nav">
+        <button class="tab-btn active" id="tab-sessions" onclick="switchTab('sessions')">🌐 Topology & Sessions</button>
+        <button class="tab-btn" id="tab-requests" onclick="switchTab('requests')">📝 Access Requests <span id="req-count" class="tab-badge" style="display:none">0</span></button>
+        <button class="tab-btn" id="tab-registry" onclick="switchTab('registry')">⚙ Service Registry</button>
+        <button class="tab-btn" id="tab-users" onclick="switchTab('users')">👥 User Directory</button>
+        <button class="tab-btn" id="tab-logs" onclick="switchTab('logs')">📜 Real-time Logs</button>
+    </div>
+
+    <main>
+        <!-- SESSIONS TAB -->
+        <div class="tab-panel active" id="panel-sessions">
+            <div class="stats-row">
+                <div class="stat-card"><div class="stat-label">Active Users</div><div class="stat-val" style="color:#34d399" id="stat-active">0</div></div>
+                <div class="stat-card"><div class="stat-label">Provisioned Svc</div><div class="stat-val" style="color:#60a5fa" id="stat-svc">0</div></div>
+                <div class="stat-card"><div class="stat-label">Requests/min</div><div class="stat-val" style="color:#fbbf24" id="stat-rpm">0</div></div>
+                <div class="stat-card"><div class="stat-label">Errors (60s)</div><div class="stat-val" style="color:#f87171" id="stat-err">0</div></div>
+            </div>
+            <div class="glass-card">
+                <div class="card-header"><div class="card-title">Live Connectivity Topology</div></div>
+                <div class="scroll-wrap">
+                    <table>
+                        <thead><tr><th>User Node</th><th>Target Service</th><th>Status</th><th>Uptime</th><th>Operations</th></tr></thead>
+                        <tbody id="sessions-list"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- REQUESTS TAB -->
+        <div class="tab-panel" id="panel-requests">
+            <div class="glass-card">
+                <div class="card-header"><div class="card-title">Pending Access Authorizations</div></div>
+                <div class="scroll-wrap">
+                    <table>
+                        <thead><tr><th>Requester</th><th>Service Requested</th><th>Timestamp</th><th>Management</th></tr></thead>
+                        <tbody id="requests-list"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- REGISTRY TAB -->
+        <div class="tab-panel" id="panel-registry">
+            <div class="dashboard-grid">
+                <div class="glass-card">
+                    <div class="card-header"><div class="card-title">Active Service Registry</div></div>
+                    <div class="scroll-wrap">
+                        <table>
+                            <thead><tr><th>Service Name</th><th>Access Mode</th><th>State</th><th>Control</th></tr></thead>
+                            <tbody id="registry-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="glass-card">
+                    <div class="card-header"><div class="card-title">Provision New Service</div></div>
+                    <div class="form-group" style="margin-bottom:1rem">
+                        <label>Internal Name</label>
+                        <input type="text" id="new-svc-name" placeholder="e.g. quantum-module">
+                    </div>
+                    <div class="form-group" style="margin-bottom:1rem">
+                        <label>Access Protocol</label>
+                        <select id="new-svc-mode">
+                            <option value="public">Public (Open Visibility)</option>
+                            <option value="private">Private (Invite Only)</option>
+                            <option value="protected">Protected (Admin Approval Required)</option>
+                        </select>
+                    </div>
+                    <button class="btn-primary" style="width:100%" onclick="provisionService()">Deploy Service Node</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- USERS TAB -->
+        <div class="tab-panel" id="panel-users">
+            <div class="dashboard-grid">
+                <div class="glass-card">
+                    <div class="card-header"><div class="card-title">Platform User Directory</div></div>
+                    <div class="scroll-wrap">
+                        <table>
+                            <thead><tr><th>Entity Name</th><th>System Role</th><th>Actions</th></tr></thead>
+                            <tbody id="users-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="glass-card">
+                    <div class="card-header"><div class="card-title">Onboard New User</div></div>
+                    <div class="form-group" style="margin-bottom:1.5rem">
+                        <label>Display ID</label>
+                        <input type="text" id="new-user-name" placeholder="Name">
+                    </div>
+                    <button class="btn-primary" style="width:100%" onclick="onboardUser()">Initialize User Record</button>
+                    <p style="font-size:0.75rem; color:var(--text-muted); margin-top:1rem; text-align:center">Note: Admin users must be created manually in DB.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- LOGS TAB -->
+        <div class="tab-panel" id="panel-logs">
+            <div class="glass-card">
+                <div class="card-header">
+                    <div class="card-title">Global Event Audit Stream</div>
+                    <button class="btn-sm" onclick="clearLogs()">Reset Buffer</button>
+                </div>
+                <div class="scroll-wrap" style="max-height:600px">
+                    <table style="font-family:'JetBrains Mono', monospace; font-size:0.8rem">
+                        <thead><tr><th>Timestamp</th><th>Service</th><th>User</th><th>Level</th><th>Message</th></tr></thead>
+                        <tbody id="logs-list"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const token = localStorage.getItem('auth_token');
+        if (!token) window.location.href = '/login.html';
+        const headers = { 'X-Auth-Token': token, 'Content-Type': 'application/json' };
+
+        function switchTab(name) {
+            document.querySelectorAll('.tab-panel, .tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById(`panel-${name}`).classList.add('active');
+            document.getElementById(`tab-${name}`).classList.add('active');
+        }
+
+        async function api(url, opt={}) {
+            const res = await fetch(url, { ...opt, headers: { ...headers, ...opt.headers } });
+            if (res.status === 401) window.location.href = '/login.html';
+            return res.json();
+        }
+
+        async function poll() {
+            try {
+                const [sessions, requests, registry, users, metrics, logs] = await Promise.all([
+                    api('/api/sessions/active'),
+                    api('/api/requests'),
+                    api('/api/registry'),
+                    api('/api/auth/users'),
+                    api('/api/metrics'),
+                    api('/api/logs/recent')
+                ]);
+
+                // Update Stats
+                document.getElementById('stat-active').innerText = sessions.length;
+                document.getElementById('stat-svc').innerText = registry.length;
+                document.getElementById('stat-rpm').innerText = metrics.logs_per_second;
+                document.getElementById('stat-err').innerText = metrics.error_count_60s;
+
+                // Update Request Badge
+                const rBadge = document.getElementById('req-count');
+                if (requests.length > 0) { rBadge.innerText = requests.length; rBadge.style.display = 'inline'; }
+                else rBadge.style.display = 'none';
+
+                // Render Sessions
+                document.getElementById('sessions-list').innerHTML = sessions.map(s => `
+                    <tr>
+                        <td><span class="user-tag">${s.user_name}</span></td>
+                        <td><strong>${s.service_name}</strong></td>
+                        <td><span class="live-dot"></span>Active</td>
+                        <td>${Math.floor(s.duration_seconds/60)}m ${s.duration_seconds%60}s</td>
+                        <td><button class="kick-btn" onclick="kick('${s.id}')">Disconnect</button></td>
+                    </tr>
+                `).join('');
+
+                // Render Requests
+                document.getElementById('requests-list').innerHTML = requests.map(r => `
+                    <tr>
+                        <td>${r.user_name}</td>
+                        <td>${r.service_name}</td>
+                        <td>${new Date(r.timestamp).toLocaleTimeString()}</td>
+                        <td>
+                            <button class="approve-btn" onclick="requestAction('${r.id}','approve')">Approve</button>
+                            <button class="deny-btn" onclick="requestAction('${r.id}','deny')">Deny</button>
+                        </td>
+                    </tr>
+                `).join('');
+
+                // Render Registry
+                document.getElementById('registry-list').innerHTML = registry.map(svc => `
+                    <tr>
+                        <td>${svc.name}</td>
+                        <td><span class="badge bg-${svc.mode}">${svc.mode}</span></td>
+                        <td>${svc.is_active ? '<span style="color:#34d399">Online</span>' : '<span style="color:#f87171">Offline</span>'}</td>
+                        <td><button class="btn-sm" onclick="toggleService('${svc.name}')">${svc.is_active ? 'Disable' : 'Enable'}</button></td>
+                    </tr>
+                `).join('');
+
+                // Render Users
+                document.getElementById('users-list').innerHTML = users.map(u => `
+                    <tr>
+                        <td>${u.name}</td>
+                        <td><span class="badge ${u.role==='admin'?'bg-info':'bg-info'}" style="opacity:0.8">${u.role}</span></td>
+                        <td>${u.name !== 'admin' ? `<button class="deny-btn" onclick="deleteUser('${u.name}')">Delete</button>` : ''}</td>
+                    </tr>
+                `).join('');
+
+                // Render Logs
+                document.getElementById('logs-list').innerHTML = logs.slice(0, 50).map(l => `
+                    <tr>
+                        <td style="color:var(--text-muted)">${l.timestamp.split('T')[1].split('.')[0]}</td>
+                        <td>${l.service_name}</td>
+                        <td><span class="user-tag">${l.user_tag}</span></td>
+                        <td><span class="badge bg-${l.severity.toLowerCase()}">${l.severity}</span></td>
+                        <td>${l.message}</td>
+                    </tr>
+                `).join('');
+
+            } catch (e) { console.error(e); }
+        }
+
+        async function provisionService() {
+            const name = document.getElementById('new-svc-name').value;
+            const mode = document.getElementById('new-svc-mode').value;
+            if (!name) return;
+            await api('/api/registry', { method: 'POST', body: JSON.stringify({ name, mode }) });
+            document.getElementById('new-svc-name').value = '';
+            poll();
+        }
+
+        async function onboardUser() {
+            const name = document.getElementById('new-user-name').value;
+            if (!name) return;
+            await api('/api/auth/users', { method: 'POST', body: JSON.stringify({ name }) });
+            document.getElementById('new-user-name').value = '';
+            poll();
+        }
+
+        async function toggleService(name) { await api(`/api/registry/${name}/toggle`, { method: 'POST' }); poll(); }
+        async function deleteUser(name) { if(confirm(`Delete ${name}?`)) { await api(`/api/auth/users/${name}`, { method: 'DELETE' }); poll(); } }
+        async function kick(id) { await api(`/api/sessions/kick/${id}`, { method: 'POST' }); poll(); }
+        async function requestAction(id, act) { await api(`/api/requests/${id}/${act}`, { method: 'POST' }); poll(); }
+        function logout() { localStorage.clear(); window.location.href = '/login.html'; }
+
+        setInterval(poll, 2000);
+        poll();
+    </script>
+</body>
+</html>

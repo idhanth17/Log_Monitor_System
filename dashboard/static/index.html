@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Terminal — Log Monitor Platform</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-deep: #050712;
+            --bg-card: rgba(13, 17, 34, 0.7);
+            --border-glass: rgba(255, 255, 255, 0.08);
+            --accent-violet: #8b5cf6;
+            --accent-green: #34d399;
+            --text-main: #e2e8f0;
+            --text-muted: #94a3b8;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background-color: var(--bg-deep);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.1) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(52, 211, 153, 0.05) 0px, transparent 50%);
+            color: var(--text-main);
+            font-family: 'Outfit', sans-serif;
+            min-height: 100vh;
+        }
+
+        nav {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 1rem 2rem;
+            background: rgba(8, 10, 22, 0.85);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border-glass);
+            position: sticky; top: 0; z-index: 100;
+        }
+        .nav-brand { font-weight: 600; font-size: 1.1rem; letter-spacing: -0.5px; }
+        .nav-brand span { color: var(--accent-violet); }
+        .nav-user { font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 1rem; }
+        .btn-logout { background: transparent; border: 1px solid rgba(255,255,255,0.1); color: var(--text-muted); padding: 0.35rem 0.8rem; border-radius: 8px; cursor: pointer; font-size: 0.8rem; }
+
+        main { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+        .header { margin-bottom: 2.5rem; }
+        .header h1 { font-size: 2.2rem; font-weight: 600; letter-spacing: -1px; margin-bottom: 0.5rem; }
+        .header p { color: var(--text-muted); font-size: 1rem; }
+
+        .services-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 1.5rem; }
+        .glass-card { background: var(--bg-card); border: 1px solid var(--border-glass); border-radius: 20px; padding: 1.75rem; backdrop-filter: blur(15px); transition: all 0.3s; position: relative; overflow: hidden; }
+        .glass-card:hover { transform: translateY(-4px); border-color: rgba(139, 92, 246, 0.3); }
+
+        .svc-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem; }
+        .svc-name { font-size: 1.15rem; font-weight: 600; color: #fff; }
+        
+        .badge { font-size: 0.65rem; padding: 0.2rem 0.6rem; border-radius: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+        .badge-public { background: rgba(52, 211, 153, 0.15); color: #34d399; }
+        .badge-private { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
+        .badge-protected { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
+
+        .svc-desc { color: var(--text-muted); font-size: 0.88rem; line-height: 1.5; margin-bottom: 1.5rem; height: 3rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+        .btn-action { width: 100%; border: none; padding: 0.85rem; border-radius: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: 'Outfit', sans-serif; font-size: 0.9rem; }
+        .btn-primary { background: linear-gradient(135deg, #5b21b6, #8b5cf6); color: #fff; box-shadow: 0 4px 15px rgba(139,92,246,0.3); }
+        .btn-primary:hover { box-shadow: 0 6px 20px rgba(139,92,246,0.4); }
+        .btn-outline { background: transparent; border: 1px solid rgba(139,92,246,0.4); color: #c4b5fd; }
+        .btn-outline:hover { background: rgba(139,92,246,0.1); }
+        .btn-stop { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239,68,68,0.3); }
+
+        .live-banner { background: rgba(52, 211, 153, 0.1); color: #34d399; padding: 0.6rem; border-radius: 10px; font-size: 0.85rem; font-weight: 600; text-align: center; margin-bottom: 1rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem; border: 1px solid rgba(52,211,153,0.2); animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.6; } }
+        .dot { width: 8px; height: 8px; background: #34d399; border-radius: 50%; box-shadow: 0 0 8px #34d399; }
+
+        .request-status { font-size: 0.8rem; color: var(--text-muted); font-style: italic; text-align: center; margin-bottom: 1rem; }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="nav-brand">⬡ User <span>Computing</span> Terminal</div>
+        <div class="nav-user">
+            <span id="user-display">Loading profile...</span>
+            <button class="btn-logout" onclick="logout()">Sign Out</button>
+        </div>
+    </nav>
+
+    <main>
+        <div class="header">
+            <h1>Authorized Services</h1>
+            <p>Select a provisioned node to begin high-performance log simulation.</p>
+        </div>
+        <div class="services-grid" id="grid"></div>
+    </main>
+
+    <script>
+        const token = localStorage.getItem('auth_token');
+        const user = localStorage.getItem('auth_name');
+        if (!token) window.location.href = '/login.html';
+        const headers = { 'X-Auth-Token': token, 'Content-Type': 'application/json' };
+
+        document.getElementById('user-display').innerText = `Logged in: ${user}`;
+
+        let sessions = {}; // svc_name -> session_id
+        let timers = {};
+
+        async function load() {
+            const res = await fetch('/api/registry', { headers });
+            if (res.status === 401) window.location.href = '/login.html';
+            const data = await res.json();
+            render(data);
+        }
+
+        function render(services) {
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+
+            services.forEach(svc => {
+                const active = sessions[svc.name];
+                let action = '';
+
+                if (active) {
+                    action = `
+                        <div class="live-banner"><span class="dot"></span> NODE ACTIVE: <span id="time-${svc.name}">00:00</span></div>
+                        <button class="btn-action btn-stop" onclick="stop('${svc.name}')">Secure Terminate</button>
+                    `;
+                } else if (svc.user_access === 'allowed' || svc.user_access === 'admin') {
+                    action = `<button class="btn-action btn-primary" onclick="start('${svc.name}')">Initialize Node</button>`;
+                } else if (svc.mode === 'protected' && svc.user_access === 'denied') {
+                    action = `<button class="btn-action btn-outline" onclick="request('${svc.name}')">Request Approval</button>`;
+                } else if (svc.user_access === 'pending') {
+                    action = `<div class="request-status">Authorization Pending Admin Approval...</div><button class="btn-action btn-outline" disabled style="opacity:0.5">Awaiting Sync</button>`;
+                } else {
+                    action = `<button class="btn-action btn-outline" disabled style="opacity:0.3; cursor:not-allowed">Access Restricted</button>`;
+                }
+
+                grid.innerHTML += `
+                    <div class="glass-card">
+                        <div class="svc-header">
+                            <div class="svc-name">${svc.name}</div>
+                            <span class="badge badge-${svc.mode}">${svc.mode}</span>
+                        </div>
+                        <p class="svc-desc">Provisioned distributed service instance running in ${svc.mode} mode. Fully audit-logged compute environment.</p>
+                        ${action}
+                    </div>
+                `;
+            });
+        }
+
+        async function start(name) {
+            const res = await fetch('/api/sessions/start', { method: 'POST', headers, body: JSON.stringify({ service_name: name }) });
+            if (res.ok) {
+                const data = await res.json();
+                sessions[name] = data.session_id;
+                let s = 0;
+                timers[name] = setInterval(() => {
+                    s++;
+                    const m = String(Math.floor(s/60)).padStart(2,'0');
+                    const sec = String(s%60).padStart(2,'0');
+                    const el = document.getElementById(`time-${name}`);
+                    if (el) el.textContent = `${m}:${sec}`;
+                }, 1000);
+                load();
+            }
+        }
+
+        async function stop(name) {
+            await fetch('/api/sessions/stop', { method: 'POST', headers, body: JSON.stringify({ session_id: sessions[name] }) });
+            delete sessions[name];
+            clearInterval(timers[name]);
+            load();
+        }
+
+        async function request(name) {
+            await fetch('/api/requests', { method: 'POST', headers, body: JSON.stringify({ service_name: name }) });
+            load();
+        }
+
+        function logout() { localStorage.clear(); window.location.href = '/login.html'; }
+
+        load();
+        setInterval(load, 5000);
+    </script>
+</body>
+</html>
