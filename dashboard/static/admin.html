@@ -376,7 +376,7 @@
                                 Higher priority wins. Ties broken by seniority.
                             </div>
                         </div>
-                        <button class="btn-sm" onclick="pollNodes()">↺ Refresh</button>
+                        <button class="btn-sm" onclick="poll()">↺ Refresh</button>
                     </div>
                     <div class="node-table-wrap">
                         <table class="node-table">
@@ -498,43 +498,98 @@
             </div>
         </div>
 
-        <!-- ══════════════════════════════════════�        function showToast(msg, type = 'success') {
+        <!-- ═══════════════════════════════════════════
+             LOGS TAB
+        ════════════════════════════════════════════ -->
+        <div class="tab-panel" id="panel-logs">
+            <div class="glass-card">
+                <div class="card-header">
+                    <div class="card-title">Real-time Platform Events</div>
+                    <button class="btn-sm" onclick="clearLogs()">🗑 Clear View</button>
+                </div>
+                <div class="scroll-wrap">
+                    <table>
+                        <thead><tr><th>Timestamp</th><th>Service</th><th>User</th><th>Severity</th><th>Message</th></tr></thead>
+                        <tbody id="logs-list"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <div id="toast"></div>
+
+    <script>
+        const token = localStorage.getItem('auth_token');
+        if (!token) window.location.href = '/login.html';
+
+        let currentLeaderId = null;
+
+        async function api(url, opts = {}) {
+            opts.headers = opts.headers || {};
+            opts.headers['X-Auth-Token'] = token;
+            opts.headers['Content-Type'] = 'application/json';
+            const res = await fetch(url, opts);
+            if (res.status === 401) { localStorage.clear(); window.location.href = '/login.html'; }
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.detail || 'API Error');
+            return data;
+        }
+
+        function switchTab(id) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+            document.getElementById(`tab-${id}`).classList.add('active');
+            document.getElementById(`panel-${id}`).classList.add('active');
+            poll(); 
+        }
+
+        function showToast(msg, type = 'success') {
             const t = document.getElementById('toast');
-            t.textContent = msg;
-            t.className = `show ${type}`;
-            setTimeout(() => t.className = '', 2800);
+            if (t) {
+                t.textContent = msg;
+                t.className = `show ${type}`;
+                setTimeout(() => t.className = '', 2800);
+            }
         }
 
         function eleLog(msg, cls = '') {
             const log = document.getElementById('election-log');
-            log.innerHTML += `<div class="log-line ${cls}">> ${msg}</div>`;
-            log.scrollTop = log.scrollHeight;
+            if (log) {
+                log.innerHTML += `<div class="log-line ${cls}">> ${msg}</div>`;
+                log.scrollTop = log.scrollHeight;
+            }
         }
 
         function fmtAge(ts) {
+            if (!ts) return 'Unknown';
             const diff = Math.floor(Date.now() / 1000 - ts);
             if (diff < 60) return `${diff}s`;
             if (diff < 3600) return `${Math.floor(diff / 60)}m ${diff % 60}s`;
             return `${Math.floor(diff / 3600)}h ${Math.floor((diff % 3600) / 60)}m`;
         }
 
-        // ── Leader Banner Update ───────────────────────────────────────────────
-        async function updateLeaderBanner() {
+        // ── Main Poll (Consolidated) ──────────────────────────────────────────
+        async function poll() {
             try {
-                const leader = await api('/api/leader/current');
+                const data = await api('/api/dashboard/summary');
+                const { sessions, requests, registry, users, metrics, logs, nodes, leader } = data;
+
+                // 1. Update Leader Banner
                 const banner = document.getElementById('leader-banner');
                 const dot    = document.getElementById('leader-dot');
                 const name   = document.getElementById('leader-name-text');
                 const meta   = document.getElementById('leader-meta-text');
 
-                if (leader.leader_id && leader.is_alive) {
+                if (leader && leader.leader_id && leader.is_alive) {
                     currentLeaderId = leader.leader_id;
                     banner.className = '';
                     dot.className = 'leader-live-dot';
-                    name.textContent = `👑 ${leader.leader_id}`;
+                    name.innerHTML = `<span>👑</span> ${leader.leader_id}`;
                     name.style.color = '#c4b5fd';
-                    meta.textContent = `Lease expires in ${leader.expires_in}s — node is running platform workload`;
-                } else if (leader.leader_id && !leader.is_alive) {
+                    meta.textContent = `Lease expires in ${leader.expires_in}s — node is cluster leader`;
+                } else if (leader && leader.leader_id && !leader.is_alive) {
                     banner.className = 'no-leader';
                     dot.className = 'leader-live-dot dead';
                     name.textContent = `⚠ ${leader.leader_id} (unresponsive)`;
@@ -546,209 +601,63 @@
                     dot.className = 'leader-live-dot dead';
                     name.textContent = 'No Leader Elected';
                     name.style.color = '#f87171';
-                    meta.textContent = 'Waiting for a node to acquire leadership. Start a simulator node.';
-                }
-            } catch (e) { /* silently ignore */ }
-        }
-
-        // ── Node Manager ───────────────────────────────────────────────────────
-        async function pollNodes() {
-            const nodes = await api('/api/nodes').catch(() => []);
-            const tbody = document.getElementById('node-manager-list');
-
-            // Count online (active + enabled)
-            const online = nodes.filter(n => n.is_active && n.node_status === 'enabled').length;
-            document.getElementById('stat-nodes').textContent = online;
-
-            if (!nodes.length) {
-                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem">No nodes registered. Start simulator nodes or register one above.</td></tr>`;
-                return;
-            }
-
-            tbody.innerHTML = nodes.map(n => {
-                const isLeader = n.node_id === currentLeaderId;
-                const isDisabled = n.node_status === 'disabled';
-                let roleBadge;
-                if (isDisabled) {
-                    roleBadge = `<span class="node-badge badge-disabled"><span class="pulse-dot yellow"></span> DISABLED</span>`;
-                } else if (isLeader) {
-                    roleBadge = `<span class="node-badge badge-leader"><span class="pulse-dot violet"></span> LEADER</span>`;
-                } else if (n.is_active) {
-                    roleBadge = `<span class="node-badge badge-online"><span class="pulse-dot green"></span> ONLINE</span>`;
-                } else {
-                    roleBadge = `<span class="node-badge badge-offline"><span class="pulse-dot red"></span> OFFLINE</span>`;
+                    meta.textContent = 'Scanning for active nodes… Start a simulator to join.';
                 }
 
-                const age = fmtAge(n.created_at);
-                const lastSeen = n.last_seen > 0 ? fmtAge(n.last_seen) + ' ago' : 'Never';
-
-                let actionBtns = '';
-                if (isDisabled) {
-                    actionBtns = `<button class="enable-btn" onclick="enableNode('${n.node_id}')" title="Allow this node to rejoin elections">✅ Bring Online</button>`;
-                } else {
-                    actionBtns = `<button class="offline-btn" onclick="disableNode('${n.node_id}')" title="Exclude from elections">⏸ Take Offline</button>`;
-                }
-                actionBtns += `<button class="remove-btn" onclick="removeNode('${n.node_id}')" title="Remove from registry">🗑</button>`;
-
-                return `
-                <tr class="${isLeader && !isDisabled ? 'is-leader' : ''}">
-                    <td>
-                        <span class="user-tag" style="${isLeader && !isDisabled ? 'border-color:#8b5cf6; color:#c4b5fd' : isDisabled ? 'border-color:#d97706; color:#fbbf24' : ''}">${n.node_id}</span>
-                    </td>
-                    <td>${roleBadge}</td>
-                    <td>
-                        <div class="prio-cell">
-                            <input class="prio-input"
-                                id="prio-${n.node_id}"
-                                type="number" min="0" max="999"
-                                value="${n.priority}"
-                                onkeydown="if(event.key==='Enter') savePriority('${n.node_id}')"
-                                oninput="document.getElementById('prio-save-${n.node_id}').classList.add('visible')"
-                                aria-label="Priority for node ${n.node_id}"
-                            >
-                            <button class="prio-save-btn" id="prio-save-${n.node_id}"
-                                onclick="savePriority('${n.node_id}')"
-                                title="Save priority">✓
-                            </button>
-                        </div>
-                    </td>
-                    <td style="color:var(--text-muted); font-family:'JetBrains Mono',monospace; font-size:0.8rem">${age}</td>
-                    <td style="color:var(--text-muted); font-family:'JetBrains Mono',monospace; font-size:0.8rem">${lastSeen}</td>
-                    <td>${actionBtns}</td>
-                </tr>`;
-            }).join('');
-        async function savePriority(nodeId) {
-            const input = document.getElementById(`prio-${nodeId}`);
-            const prio  = parseInt(input.value, 10);
-            if (isNaN(prio) || prio < 0) { showToast('Priority must be a non-negative integer', 'error'); return; }
-
-            const res = await api(`/api/nodes/${nodeId}/priority`, {
-                method: 'PATCH',
-                body: JSON.stringify({ priority: prio })
-            });
-
-            if (res.status === 'updated') {
-                showToast(`✓ Node [${nodeId}] priority set to ${prio} — re-election on next heartbeat`);
-                document.getElementById(`prio-save-${nodeId}`)?.classList.remove('visible');
-            } else {
-                showToast(res.detail || 'Failed to update priority', 'error');
-            }
-            await pollNodes();
-        }
-
-        async function removeNode(nodeId) {
-            if (!confirm(`Remove node [${nodeId}] from registry?\n\nIf it is still running it will re-register on the next heartbeat.`)) return;
-            const res = await api(`/api/nodes/${nodeId}`, { method: 'DELETE' });
-            if (res.status === 'removed') {
-                showToast(`Node [${nodeId}] removed from registry`);
-            } else {
-                showToast(res.detail || 'Failed to remove node', 'error');
-            }
-            await pollNodes();
-        }
-
-        async function enableNode(nodeId) {
-            const res = await api(`/api/nodes/${nodeId}/enable`, { method: 'POST' });
-            if (res.status === 'enabled') {
-                showToast(`✅ Node [${nodeId}] is back ONLINE — eligible for election`, 'success');
-            } else {
-                showToast(res.detail || 'Failed to enable node', 'error');
-            }
-            await pollNodes();
-        }
-
-        async function disableNode(nodeId) {
-            if (!confirm(`Take node [${nodeId}] offline?\n\nIt will be excluded from elections until you bring it back online.`)) return;
-            const res = await api(`/api/nodes/${nodeId}/disable`, { method: 'POST' });
-            if (res.status === 'disabled') {
-                showToast(`Node [${nodeId}] taken offline — excluded from elections`);
-            } else {
-                showToast(res.detail || 'Failed to disable node', 'error');
-            }
-            await pollNodes();
-        }
-
-        async function addNode() {
-            const nodeId   = document.getElementById('new-node-id').value.trim();
-            const priority = parseInt(document.getElementById('new-node-priority').value, 10) || 0;
-            if (!nodeId) { showToast('Node ID is required', 'error'); return; }
-            const res = await api('/api/nodes', {
-                method: 'POST',
-                body: JSON.stringify({ node_id: nodeId, priority })
-            });
-            if (res.status === 'registered') {
-                showToast(`Node [${nodeId}] registered — start a simulator with matching ID to activate`);
-                document.getElementById('new-node-id').value = '';
-                document.getElementById('new-node-priority').value = '0';
-            } else {
-                showToast(res.detail || 'Failed to register node', 'error');
-            }
-            await pollNodes();
-        }
-
-        // ── Force Crash ────────────────────────────────────────────────────────
-        async function crashLeader() {
-            if (!currentLeaderId) { showToast('No active leader to crash', 'error'); return; }
-            if (!confirm(`Force-crash leader [${currentLeaderId}]?\n\nThe node will shut itself down immediately. Election will re-run based on priority & age.`)) return;
-
-            document.getElementById('election-card').style.display = 'block';
-            document.getElementById('election-log').innerHTML = '';
-            eleLog(`CRASH SIGNAL sent to [${currentLeaderId}]`);
-
-            await api('/api/leader/crash', { method: 'POST' });
-
-            setTimeout(() => eleLog('Lease invalidated. Scanning cluster for candidates…'), 800);
-            setTimeout(async () => {
-                const nodes = await api('/api/nodes');
-                const active = (nodes || []).filter(n => n.is_active && n.node_id !== currentLeaderId);
-                eleLog(`${active.length} candidate(s) found.`);
-                active.forEach(n => eleLog(`  Candidate [${n.node_id}]: prio=${n.priority}, age=${fmtAge(n.created_at)}`));
-            }, 1800);
-
-            setTimeout(async () => {
-                const nodes = await api('/api/nodes');
-                const active = (nodes || []).filter(n => n.is_active && n.node_id !== currentLeaderId);
-                const best = active.sort((a,b) => b.priority - a.priority || a.created_at - b.created_at)[0];
-                if (best) {
-                    eleLog(`<strong>WINNER ELECTED:</strong> [${best.node_id}] (prio=${best.priority})`, 'winner');
-                    eleLog('Propagating leadership tokens to all followers…');
-                } else {
-                    eleLog('No active candidates. Waiting for next heartbeat cycle…', 'error');
-                }
-            }, 4000);
-
-            setTimeout(() => {
-                document.getElementById('election-card').style.display = 'none';
-                poll();
-            }, 9000);
-        }
-
-        // ── Main Poll ─────────────────────────────────────────────────────────
-        async function poll() {
-            try {
-                const [sessions, requests, registry, users, metrics, logs] = await Promise.all([
-                    api('/api/sessions/active'),
-                    api('/api/requests'),
-                    api('/api/registry'),
-                    api('/api/auth/users'),
-                    api('/api/metrics'),
-                    api('/api/logs/recent'),
-                ]);
-
-                await updateLeaderBanner();
-                await pollNodes();
-
-                // Stats
+                // 2. Stats
+                const onlineCount = nodes.filter(n => n.is_active && n.node_status === 'enabled').length;
                 document.getElementById('stat-active').textContent = sessions.length;
+                document.getElementById('stat-nodes').textContent  = onlineCount;
                 document.getElementById('stat-rpm').textContent    = metrics.logs_per_second ?? 0;
                 document.getElementById('stat-err').textContent    = metrics.error_count_60s ?? 0;
 
-                // Request badge
+                // 3. Request badge
                 const rBadge = document.getElementById('req-count');
                 if (requests.length > 0) { rBadge.textContent = requests.length; rBadge.style.display = 'inline'; }
                 else rBadge.style.display = 'none';
 
-                // Sessions
+                // 4. Node Manager List
+                const nTbody = document.getElementById('node-manager-list');
+                if (nTbody) {
+                    if (!nodes.length) {
+                        nTbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem">No nodes registered.</td></tr>`;
+                    } else {
+                        nTbody.innerHTML = nodes.map(n => {
+                            const isNodeLeader = n.node_id === currentLeaderId;
+                            const isDisabled = n.node_status === 'disabled';
+                            let badge;
+                            if (isDisabled) badge = `<span class="node-badge badge-disabled"><span class="pulse-dot yellow"></span> DISABLED</span>`;
+                            else if (isNodeLeader) badge = `<span class="node-badge badge-leader"><span class="pulse-dot violet"></span> LEADER</span>`;
+                            else if (n.is_active) badge = `<span class="node-badge badge-online"><span class="pulse-dot green"></span> ONLINE</span>`;
+                            else badge = `<span class="node-badge badge-offline"><span class="pulse-dot red"></span> OFFLINE</span>`;
+
+                            const age = fmtAge(n.created_at);
+                            const lastSeen = n.last_seen > 0 ? fmtAge(n.last_seen) + ' ago' : 'Never';
+                            let actions;
+                            if (isDisabled) actions = `<button class="enable-btn" onclick="enableNode('${n.node_id}')">✅ Bring Online</button>`;
+                            else actions = `<button class="offline-btn" onclick="disableNode('${n.node_id}')">⏸ Take Offline</button>`;
+                            actions += `<button class="remove-btn" onclick="removeNode('${n.node_id}')">🗑</button>`;
+
+                            return `
+                                <tr class="${isNodeLeader && !isDisabled ? 'is-leader' : ''}">
+                                    <td><span class="user-tag" style="${isNodeLeader && !isDisabled ? 'border-color:#8b5cf6; color:#c4b5fd' : ''}">${n.node_id}</span></td>
+                                    <td>${badge}</td>
+                                    <td>
+                                        <div class="prio-cell">
+                                            <input type="number" class="prio-input" value="${n.priority}" onchange="this.nextElementSibling.classList.add('visible')">
+                                            <button class="prio-save-btn" onclick="updatePrio('${n.node_id}', this.previousElementSibling.value, this)">✓</button>
+                                        </div>
+                                    </td>
+                                    <td>${age}</td>
+                                    <td style="font-size:0.75rem; color:var(--text-muted)">${lastSeen}</td>
+                                    <td>${actions}</td>
+                                </tr>
+                            `;
+                        }).join('');
+                    }
+                }
+
+                // 5. Sessions
                 document.getElementById('sessions-list').innerHTML = sessions.map(s => `
                     <tr>
                         <td><span class="user-tag">${s.user_name}</span></td>
@@ -759,7 +668,7 @@
                     </tr>
                 `).join('') || `<tr><td colspan="5" style="color:var(--text-muted); text-align:center; padding:1.5rem">No active sessions</td></tr>`;
 
-                // Requests
+                // 6. Requests
                 document.getElementById('requests-list').innerHTML = requests.map(r => `
                     <tr>
                         <td>${r.user_name}</td>
@@ -772,7 +681,7 @@
                     </tr>
                 `).join('') || `<tr><td colspan="4" style="color:var(--text-muted); text-align:center; padding:1.5rem">No pending requests</td></tr>`;
 
-                // Registry
+                // 7. Registry
                 document.getElementById('registry-list').innerHTML = registry.map(svc => `
                     <tr>
                         <td>${svc.name}</td>
@@ -782,7 +691,7 @@
                     </tr>
                 `).join('');
 
-                // Users
+                // 8. Users
                 document.getElementById('users-list').innerHTML = users.map(u => `
                     <tr>
                         <td>${u.name}</td>
@@ -791,16 +700,19 @@
                     </tr>
                 `).join('');
 
-                // Logs
-                document.getElementById('logs-list').innerHTML = logs.slice(0, 60).map(l => `
+                // 9. Logs
+                document.getElementById('logs-list').innerHTML = logs.map(l => {
+                    let ts = l.timestamp || '';
+                    try { ts = ts.includes('T') ? ts.split('T')[1].split('.')[0] : ts.slice(0,19); } catch(_) {}
+                    return `
                     <tr>
-                        <td style="color:var(--text-muted)">${l.timestamp.split('T')[1].split('.')[0]}</td>
+                        <td style="color:var(--text-muted)">${ts}</td>
                         <td>${l.service_name}</td>
-                        <td><span class="user-tag">${l.user_tag}</span></td>
-                        <td><span class="badge bg-${l.severity.toLowerCase()}">${l.severity}</span></td>
-                        <td style="max-width:400px; overflow:hidden; text-overflow:ellipsis">${l.message}</td>
-                    </tr>
-                `).join('');
+                        <td><span class="user-tag">${l.user_tag || 'system'}</span></td>
+                        <td><span class="badge bg-${(l.severity||'info').toLowerCase()}">${l.severity}</span></td>
+                        <td style="max-width:400px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${l.message}</td>
+                    </tr>`;
+                }).join('');
 
             } catch (e) { console.error('Poll error:', e); }
         }
@@ -812,7 +724,7 @@
             const allowed = document.getElementById('new-svc-allowed').value
                               .split(',').map(s => s.trim()).filter(Boolean);
             if (!name) { showToast('Service name is required', 'error'); return; }
-            await api('/api/registry', { method: 'POST', body: JSON.stringify({ name, mode, allowed_users: allowed }) });
+            await api('/api/services', { method: 'POST', body: JSON.stringify({ name, mode, allowed_users: allowed }) });
             document.getElementById('new-svc-name').value = '';
             document.getElementById('new-svc-allowed').value = '';
             showToast(`Service [${name}] provisioned`);
@@ -822,13 +734,13 @@
         function toggleAllowedUsersField() {
             const mode  = document.getElementById('new-svc-mode').value;
             const group = document.getElementById('allowed-users-group');
-            group.style.display = mode === 'private' ? 'block' : 'none';
+            if (group) group.style.display = mode === 'private' ? 'block' : 'none';
         }
 
         async function onboardUser() {
             const name = document.getElementById('new-user-name').value.trim();
             if (!name) { showToast('Name is required', 'error'); return; }
-            await api('/api/auth/users', { method: 'POST', body: JSON.stringify({ name }) });
+            await api('/api/auth/users', { method: 'POST', body: JSON.stringify({ name, role: 'user' }) });
             document.getElementById('new-user-name').value = '';
             showToast(`User [${name}] onboarded`);
             poll();
@@ -838,26 +750,82 @@
             await api(`/api/registry/${name}/toggle`, { method: 'POST' });
             poll();
         }
+
         async function deleteUser(name) {
             if (!confirm(`Delete user [${name}]?`)) return;
             await api(`/api/auth/users/${name}`, { method: 'DELETE' });
             showToast(`User [${name}] deleted`);
             poll();
         }
+
         async function kick(id) {
             await api(`/api/sessions/kick/${id}`, { method: 'POST' });
             poll();
         }
+
         async function requestAction(id, act) {
             await api(`/api/requests/${id}/${act}`, { method: 'POST' });
             showToast(`Request ${act}d`);
             poll();
         }
+
+        async function crashLeader() {
+            if (!currentLeaderId) return showToast('No active leader', 'warning');
+            if (!confirm('Force-crash the current leader? This triggers a cluster-wide failover.')) return;
+            await api('/api/leader/crash', { method: 'POST' });
+            showToast('Crash signal broadcasted', 'error');
+            const card = document.getElementById('election-card');
+            if (card) {
+                card.style.display = 'block';
+                document.getElementById('election-log').innerHTML = '';
+                eleLog('CRITICAL: Manual crash triggered by administrator.');
+                setTimeout(() => eleLog('Lease invalidated. Scanning cluster for candidates…'), 800);
+                setTimeout(() => eleLog('Re-election sequence active. Polling registry…'), 2500);
+                setTimeout(() => { card.style.display = 'none'; poll(); }, 6000);
+            }
+        }
+
+        async function enableNode(node_id) {
+            await api(`/api/nodes/${node_id}/enable`, { method: 'POST' });
+            showToast(`Node ${node_id} re-enabled`);
+            poll();
+        }
+
+        async function disableNode(node_id) {
+            await api(`/api/nodes/${node_id}/disable`, { method: 'POST' });
+            showToast(`Node ${node_id} disabled`);
+            poll();
+        }
+
+        async function updatePrio(node_id, priority, btn) {
+            await api(`/api/nodes/${node_id}/priority`, { method: 'PATCH', body: JSON.stringify({ priority: parseInt(priority) }) });
+            btn.classList.remove('visible');
+            showToast(`Priority updated for ${node_id}`);
+            poll();
+        }
+
+        async function removeNode(node_id) {
+            if (!confirm(`Permanently remove node ${node_id} from registry?`)) return;
+            await api(`/api/nodes/${node_id}`, { method: 'DELETE' }).catch(() => {});
+            showToast(`Node ${node_id} removed`);
+            poll();
+        }
+
+        async function addNode() {
+            const node_id = document.getElementById('new-node-id').value.trim();
+            const priority = parseInt(document.getElementById('new-node-priority').value);
+            if (!node_id) return showToast('Node ID is required', 'error');
+            await api('/api/nodes/register', { method: 'POST', body: JSON.stringify({ node_id, priority }) });
+            document.getElementById('new-node-id').value = '';
+            showToast(`Node ${node_id} registered`);
+            poll();
+        }
+
         function logout() { localStorage.clear(); window.location.href = '/login.html'; }
         function clearLogs() { document.getElementById('logs-list').innerHTML = ''; }
 
         // ── Boot ───────────────────────────────────────────────────────────────
-        setInterval(poll, 2500);
+        setInterval(poll, 5000);
         poll();
     </script>
 </body>
