@@ -27,7 +27,7 @@ DB_PATH = os.getenv("DB_PATH", "logs.db")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "admin123")
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=10)
     cursor = conn.cursor()
 
     # Logs table (preserved)
@@ -133,6 +133,43 @@ def init_db():
     # Clean up expired tokens on startup
     cursor.execute('DELETE FROM tokens WHERE expires < ?', (time.time(),))
 
+    # Distributed Leader Election Table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS leader_election (
+            id INTEGER PRIMARY KEY,
+            leader_id TEXT,
+            expires REAL,
+            force_crash INTEGER DEFAULT 0
+        )
+    ''')
+    try:
+        cursor.execute("ALTER TABLE leader_election ADD COLUMN force_crash INTEGER DEFAULT 0")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
+    cursor.execute('SELECT COUNT(*) FROM leader_election')
+    if cursor.fetchone()[0] == 0:
+        cursor.execute('INSERT INTO leader_election (id, leader_id, expires, force_crash) VALUES (1, NULL, 0, 0)')
+
+    # Node Registry for Priority & Tenure
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS node_registry (
+            node_id TEXT PRIMARY KEY,
+            priority INTEGER DEFAULT 0,
+            created_at REAL,
+            last_seen REAL,
+            node_status TEXT DEFAULT 'enabled'
+        )
+    ''')
+    # Migration: add node_status if upgrading from older schema
+    try:
+        cursor.execute("ALTER TABLE node_registry ADD COLUMN node_status TEXT DEFAULT 'enabled'")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
+
+
     # Seed admin user
     pw_hash = hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
     cursor.execute('''
@@ -170,12 +207,12 @@ def hash_password(pw: str) -> str:
     return hashlib.sha256(pw.encode()).hexdigest()
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     return conn
 
 def write_log(service_name: str, user_name: str, severity: str, message: str):
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO logs (timestamp, service_name, host_id, severity, message, request_id, user_tag)
@@ -190,7 +227,7 @@ def write_log(service_name: str, user_name: str, severity: str, message: str):
 
 def get_token_user(token: str):
     """Look up token in the DB (survives restarts)."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
     cursor.execute('SELECT * FROM tokens WHERE token=?', (token,))
@@ -200,7 +237,7 @@ def get_token_user(token: str):
         return None
     if row['expires'] < time.time():
         # Clean up expired token
-        conn2 = sqlite3.connect(DB_PATH)
+        conn2 = sqlite3.connect(DB_PATH, timeout=10)
         conn2.execute('DELETE FROM tokens WHERE token=?', (token,))
         conn2.commit()
         conn2.close()
@@ -208,14 +245,14 @@ def get_token_user(token: str):
     return {"name": row["user_name"], "role": row["role"], "expires": row["expires"]}
 
 def save_token(token: str, name: str, role: str, expires: float):
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.execute('INSERT OR REPLACE INTO tokens (token, user_name, role, expires) VALUES (?,?,?,?)',
                  (token, name, role, expires))
     conn.commit()
     conn.close()
 
 def delete_token(token: str):
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.execute('DELETE FROM tokens WHERE token=?', (token,))
     conn.commit()
     conn.close()
@@ -248,8 +285,19 @@ class CreateUserRequest(BaseModel):
 
 class CreateServiceRequest(BaseModel):
     name: str
+
+class ElectRequest(BaseModel):
+    node_id: str
+    priority: int = 0
     mode: str = "public"
     allowed_users: Optional[List[str]] = []
+
+class RegisterNodeRequest(BaseModel):
+    node_id: str
+    priority: int = 0
+
+class PriorityUpdateRequest(BaseModel):
+    priority: int
 
 class SessionStartRequest(BaseModel):
     service_name: str
@@ -611,8 +659,289 @@ async def get_metrics(request: Request):
 
 @app.post("/api/heartbeat")
 async def heartbeat(request: Request):
-    # For compatibility with simulator pulse
+    """Update failure detector with latest service heartbeat."""
+    data = await request.json()
+    svc = data.get("service_name")
+    host = data.get("host_id")
+    status = data.get("status", "active")
+    
+    if not svc:
+        return {"status": "error", "message": "Missing service_name"}
+
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # Check current status in DB
+    cursor.execute('SELECT status FROM failure_detectors WHERE service_name = ?', (svc,))
+    row = cursor.fetchone()
+    
+    ts = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    cursor.execute('''
+        INSERT OR REPLACE INTO failure_detectors (service_name, status, last_heartbeat)
+        VALUES (?, ?, ?)
+    ''', (svc, status, ts))
+    
+    # Log if it's a new or changed status
+    if not row or row['status'] != status:
+        write_log(svc, host, "INFO" if status == "active" else "WARNING", 
+                  f"Service status changed to {status} via host {host}")
+    
+    conn.commit()
+    conn.close()
     return {"status": "ok"}
+
+# -----------------------------------------------------------------
+# LEADER ELECTION
+# -----------------------------------------------------------------
+@app.get("/api/nodes")
+async def list_nodes(request: Request):
+    """Admin-only: list all known nodes and their metrics."""
+    require_admin(request)
+    now = time.time()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT * FROM node_registry ORDER BY priority DESC, created_at ASC')
+    rows = cursor.fetchall()
+    conn.close()
+    
+    nodes = []
+    for r in rows:
+        d = dict(r)
+        d["is_active"] = (now - d["last_seen"]) < 15 if d["last_seen"] else False
+        d["node_status"] = d.get("node_status", "enabled")
+        nodes.append(d)
+    return nodes
+
+@app.post("/api/nodes")
+async def register_node(body: RegisterNodeRequest, request: Request):
+    """Admin-only: pre-register a node in the registry."""
+    require_admin(request)
+    now = time.time()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT node_id FROM node_registry WHERE node_id = ?', (body.node_id,))
+    if cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=400, detail="Node ID already exists")
+    cursor.execute(
+        'INSERT INTO node_registry (node_id, priority, created_at, last_seen, node_status) VALUES (?, ?, ?, ?, ?)',
+        (body.node_id, body.priority, now, 0, 'enabled')
+    )
+    conn.commit()
+    conn.close()
+    write_log("admin-console", "admin", "INFO",
+              f"Node [{body.node_id}] pre-registered by admin (priority={body.priority}).")
+    return {"status": "registered", "node_id": body.node_id}
+
+@app.post("/api/nodes/{node_id}/enable")
+async def enable_node(node_id: str, request: Request):
+    """Admin-only: mark a node as enabled so it can participate in elections."""
+    require_admin(request)
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT node_id FROM node_registry WHERE node_id = ?', (node_id,))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Node not found")
+    cursor.execute("UPDATE node_registry SET node_status = 'enabled' WHERE node_id = ?", (node_id,))
+    conn.commit()
+    conn.close()
+    write_log("admin-console", "admin", "INFO",
+              f"Node [{node_id}] re-enabled by admin — eligible for election.")
+    return {"status": "enabled", "node_id": node_id}
+
+@app.post("/api/nodes/{node_id}/disable")
+async def disable_node(node_id: str, request: Request):
+    """Admin-only: mark a node as disabled so it cannot win elections."""
+    require_admin(request)
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT node_id FROM node_registry WHERE node_id = ?', (node_id,))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Node not found")
+    cursor.execute("UPDATE node_registry SET node_status = 'disabled' WHERE node_id = ?", (node_id,))
+    conn.commit()
+    conn.close()
+    write_log("admin-console", "admin", "WARNING",
+              f"Node [{node_id}] disabled by admin — excluded from elections.")
+    return {"status": "disabled", "node_id": node_id}
+
+@app.post("/api/leader/elect")
+async def leader_elect(body: ElectRequest):
+    """Distributed nodes call this to acquire/renew leadership lease with priority/tenure."""
+    now = time.time()
+    conn = get_db()
+    cursor = conn.cursor()
+    
+    # 0. Register/Update node in node_registry
+    cursor.execute('SELECT created_at, node_status FROM node_registry WHERE node_id = ?', (body.node_id,))
+    row = cursor.fetchone()
+    if not row:
+        created_at = now
+        cursor.execute(
+            'INSERT INTO node_registry (node_id, priority, created_at, last_seen, node_status) VALUES (?, ?, ?, ?, ?)',
+            (body.node_id, body.priority, created_at, now, 'enabled')
+        )
+    else:
+        created_at = row['created_at']
+        node_status = row['node_status']
+        # If the node is disabled (was crashed), do NOT update last_seen so it stays invisible
+        # but still allow it to update its priority for when it gets re-enabled
+        if node_status == 'disabled':
+            # Node was force-crashed — tell it to stay down
+            conn.commit()
+            conn.close()
+            return {"status": "disabled", "message": "Node is disabled by admin. Re-enable via Node Manager to rejoin."}
+        cursor.execute('UPDATE node_registry SET priority = ?, last_seen = ? WHERE node_id = ?',
+                       (body.priority, now, body.node_id))
+    
+    # 1. Check for force_crash
+    cursor.execute('SELECT leader_id, force_crash FROM leader_election WHERE id = 1')
+    row = cursor.fetchone()
+    
+    if row and row['leader_id'] == body.node_id and row['force_crash'] == 1:
+        # Disable the node so it can't immediately re-win the election
+        cursor.execute("UPDATE node_registry SET node_status = 'disabled' WHERE node_id = ?", (body.node_id,))
+        cursor.execute('UPDATE leader_election SET leader_id = NULL, force_crash = 0 WHERE id = 1')
+        conn.commit()
+        conn.close()
+        write_log("platform-coordinator", body.node_id, "CRITICAL",
+                  f"Node [{body.node_id}] force-crashed by admin — marked disabled. Admin must re-enable via Node Manager.")
+        return {"status": "crashed"}
+
+    # 2. Check current leader status
+    cursor.execute('SELECT leader_id, expires FROM leader_election WHERE id = 1')
+    row = cursor.fetchone()
+    current_leader = row['leader_id']
+    expires = row['expires']
+    
+    # If there's an active leader who is NOT this node, check if we should even consider election
+    if current_leader and expires > now and current_leader != body.node_id:
+        # Check if the current leader is still active, enabled, and in node_registry
+        cursor.execute("SELECT last_seen, node_status FROM node_registry WHERE node_id = ?", (current_leader,))
+        l_row = cursor.fetchone()
+        if l_row and (now - l_row['last_seen']) < 15 and l_row['node_status'] == 'enabled':
+            conn.commit()
+            conn.close()
+            return {"status": "standby", "leader_id": current_leader}
+
+    # 3. If we are here, we need an election (old leader expired / crashed / gone)
+    # Find the BEST candidate among active nodes that are ENABLED
+    cursor.execute(
+        "SELECT * FROM node_registry WHERE last_seen > ? AND node_status = 'enabled' ORDER BY priority DESC, created_at ASC",
+        (now - 15,)
+    )
+    candidates = cursor.fetchall()
+    
+    if not candidates:
+        conn.commit()
+        conn.close()
+        return {"status": "standby", "leader_id": None}
+    
+    best_candidate = candidates[0]['node_id']
+    
+    if best_candidate == body.node_id:
+        status = "acquired" if current_leader != body.node_id else "renewed"
+        new_expires = now + 15
+        cursor.execute('UPDATE leader_election SET leader_id = ?, expires = ?, force_crash = 0 WHERE id = 1',
+                       (body.node_id, new_expires))
+        conn.commit()
+        conn.close()
+        return {
+            "status": status, 
+            "leader_id": body.node_id, 
+            "expires": new_expires,
+            "candidates": [dict(c) for c in candidates]
+        }
+    else:
+        conn.commit()
+        conn.close()
+        return {
+            "status": "standby", 
+            "leader_id": best_candidate,
+            "candidates": [dict(c) for c in candidates]
+        }
+
+@app.post("/api/leader/crash")
+async def leader_crash(request: Request):
+    """Admin-only: signal current leader to crash upon next renewal."""
+    require_admin(request)
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE leader_election SET force_crash = 1 WHERE id = 1')
+    conn.commit()
+    conn.close()
+    write_log("admin-console", "admin", "WARNING", "Sent CRASH signal to current distributed leader.")
+    return {"status": "crash_signal_set"}
+
+@app.get("/api/leader/current")
+async def get_current_leader():
+    """Returns the current elected leader and whether it is still alive."""
+    now = time.time()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT leader_id, expires FROM leader_election WHERE id = 1')
+    row = cursor.fetchone()
+    if not row or not row['leader_id']:
+        conn.close()
+        return {"leader_id": None, "is_alive": False, "expires": None}
+
+    leader_id = row['leader_id']
+    expires = row['expires']
+
+    # Cross-check with node_registry last_seen
+    cursor.execute('SELECT last_seen FROM node_registry WHERE node_id = ?', (leader_id,))
+    n_row = cursor.fetchone()
+    conn.close()
+
+    is_alive = bool(
+        n_row and
+        (now - n_row['last_seen']) < 15 and
+        expires > now
+    )
+    return {
+        "leader_id": leader_id,
+        "is_alive": is_alive,
+        "expires": expires,
+        "expires_in": max(0, round(expires - now, 1))
+    }
+
+@app.patch("/api/nodes/{node_id}/priority")
+async def update_node_priority(node_id: str, body: PriorityUpdateRequest, request: Request):
+    """Admin-only: update a node's election priority. Takes effect on the next heartbeat cycle."""
+    require_admin(request)
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('SELECT node_id FROM node_registry WHERE node_id = ?', (node_id,))
+    if not cursor.fetchone():
+        conn.close()
+        raise HTTPException(status_code=404, detail="Node not found")
+    cursor.execute('UPDATE node_registry SET priority = ? WHERE node_id = ?', (body.priority, node_id))
+    conn.commit()
+    conn.close()
+    write_log("admin-console", "admin", "INFO",
+              f"Node [{node_id}] priority updated to {body.priority} by admin.")
+    return {"status": "updated", "node_id": node_id, "priority": body.priority}
+
+@app.delete("/api/nodes/{node_id}")
+async def delete_node(node_id: str, request: Request):
+    """Admin-only: remove a node from the registry (for stale/offline nodes)."""
+    require_admin(request)
+    conn = get_db()
+    cursor = conn.cursor()
+    # Don't allow removing an active node silently — check last_seen
+    cursor.execute('SELECT last_seen FROM node_registry WHERE node_id = ?', (node_id,))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Node not found")
+    cursor.execute('DELETE FROM node_registry WHERE node_id = ?', (node_id,))
+    conn.commit()
+    conn.close()
+    write_log("admin-console", "admin", "WARNING",
+              f"Node [{node_id}] removed from registry by admin.")
+    return {"status": "removed", "node_id": node_id}
 
 # -----------------------------------------------------------------
 # SERVE DASHBOARDS

@@ -3,117 +3,307 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard — Log Monitor</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <title>Admin Dashboard — SecureLog Infrastructure</title>
+    <meta name="description" content="Platform admin dashboard for distributed node management, leader election, and service registry control.">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg-deep: #050712;
-            --bg-card: rgba(13, 17, 34, 0.7);
-            --border-glass: rgba(255, 255, 255, 0.08);
+            --bg-card: rgba(13, 17, 34, 0.75);
+            --border-glass: rgba(255, 255, 255, 0.07);
             --accent-violet: #8b5cf6;
             --accent-green: #34d399;
+            --accent-amber: #fbbf24;
+            --accent-red: #ef4444;
             --text-main: #e2e8f0;
             --text-muted: #94a3b8;
-            --status-red: #ef4444;
-            --border-violet: rgba(139, 92, 246, 0.25);
+            --border-violet: rgba(139, 92, 246, 0.3);
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
+
         body {
             background-color: var(--bg-deep);
-            background-image: 
-                radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.1) 0px, transparent 50%),
-                radial-gradient(at 100% 100%, rgba(52, 211, 153, 0.05) 0px, transparent 50%);
+            background-image:
+                radial-gradient(at 0% 0%, rgba(139, 92, 246, 0.12) 0px, transparent 55%),
+                radial-gradient(at 100% 100%, rgba(52, 211, 153, 0.06) 0px, transparent 50%),
+                radial-gradient(at 60% 40%, rgba(251, 191, 36, 0.03) 0px, transparent 40%);
             color: var(--text-main);
             font-family: 'Outfit', sans-serif;
             min-height: 100vh;
         }
 
+        /* ── NAV ──────────────────────────────────────────────── */
         nav {
             display: flex; justify-content: space-between; align-items: center;
-            padding: 1.25rem 2rem;
-            background: rgba(8, 10, 22, 0.8);
+            padding: 1.1rem 2rem;
+            background: rgba(8, 10, 22, 0.85);
             backdrop-filter: blur(20px);
             border-bottom: 1px solid var(--border-glass);
-            position: sticky; top: 0; z-index: 100;
+            position: sticky; top: 0; z-index: 200;
         }
-        .nav-brand { font-weight: 600; font-size: 1.2rem; letter-spacing: -0.5px; display: flex; align-items: center; gap: 0.75rem; }
+        .nav-brand { font-weight: 700; font-size: 1.15rem; letter-spacing: -0.5px; display: flex; align-items: center; gap: 0.75rem; }
         .nav-brand span { color: var(--accent-violet); }
-        .nav-right { display: flex; align-items: center; gap: 1.5rem; }
-        .admin-badge { background: rgba(139, 92, 246, 0.15); color: #c4b5fd; padding: 0.3rem 0.8rem; border-radius: 20px; font-size: 0.75rem; font-weight: 600; border: 1px solid rgba(139, 92, 246, 0.3); }
+        .nav-right { display: flex; align-items: center; gap: 1.25rem; }
+        .admin-badge {
+            background: rgba(139, 92, 246, 0.15); color: #c4b5fd;
+            padding: 0.3rem 0.85rem; border-radius: 20px; font-size: 0.7rem; font-weight: 700;
+            border: 1px solid rgba(139, 92, 246, 0.35); letter-spacing: 0.5px;
+        }
         .btn-sm { background: transparent; border: 1px solid rgba(255,255,255,0.1); color: var(--text-muted); padding: 0.4rem 0.9rem; border-radius: 8px; cursor: pointer; transition: all 0.2s; font-size: 0.85rem; }
-        .btn-sm:hover { color: white; background: rgba(255,255,255,0.05); }
+        .btn-sm:hover { color: white; background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.2); }
 
-        .tab-nav { display: flex; gap: 2.5rem; padding: 0 2rem; border-bottom: 1px solid var(--border-glass); background: rgba(8, 10, 22, 0.4); }
+        /* ── TABS ─────────────────────────────────────────────── */
+        .tab-nav {
+            display: flex; gap: 0; padding: 0 2rem;
+            border-bottom: 1px solid var(--border-glass);
+            background: rgba(8, 10, 22, 0.5);
+            overflow-x: auto;
+        }
         .tab-btn {
-            background: none; border: none; padding: 1.1rem 0; color: var(--text-muted);
-            font-family: 'Outfit', sans-serif; font-size: 0.9rem; font-weight: 500;
-            cursor: pointer; position: relative; border-bottom: 2px solid transparent;
-            transition: all 0.2s; display: flex; align-items: center; gap: 0.6rem;
+            background: none; border: none; padding: 1.05rem 1.4rem;
+            color: var(--text-muted); font-family: 'Outfit', sans-serif;
+            font-size: 0.875rem; font-weight: 500; cursor: pointer;
+            position: relative; border-bottom: 2px solid transparent;
+            transition: all 0.2s; display: flex; align-items: center; gap: 0.55rem;
+            white-space: nowrap;
         }
         .tab-btn:hover { color: var(--text-main); }
         .tab-btn.active { color: #c4b5fd; border-bottom-color: var(--accent-violet); }
-        .tab-badge { background: #ef4444; color: #fff; border-radius: 10px; padding: 0.1rem 0.45rem; font-size: 0.65rem; font-weight: 600; }
+        .tab-badge { background: #ef4444; color: #fff; border-radius: 10px; padding: 0.1rem 0.45rem; font-size: 0.65rem; font-weight: 700; }
 
         main { max-width: 1400px; margin: 0 auto; padding: 2rem; }
         .tab-panel { display: none; }
         .tab-panel.active { display: block; animation: fadeIn 0.3s ease; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
-        .dashboard-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; }
-        .glass-card { background: var(--bg-card); border: 1px solid var(--border-glass); border-radius: 20px; padding: 1.75rem; backdrop-filter: blur(15px); margin-bottom: 1.5rem; }
-        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-        .card-title { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-muted); }
+        /* ── LEADER BANNER ────────────────────────────────────── */
+        #leader-banner {
+            border-radius: 18px; padding: 1.4rem 2rem;
+            margin-bottom: 1.75rem;
+            display: flex; justify-content: space-between; align-items: center;
+            gap: 1.5rem; flex-wrap: wrap;
+            border: 1px solid rgba(139,92,246,0.4);
+            background: linear-gradient(135deg, rgba(139,92,246,0.08), rgba(52,211,153,0.04));
+            backdrop-filter: blur(15px);
+            transition: border-color 0.4s, background 0.4s;
+        }
+        #leader-banner.no-leader {
+            border-color: rgba(239,68,68,0.4);
+            background: linear-gradient(135deg, rgba(239,68,68,0.06), rgba(239,68,68,0.02));
+        }
+        .leader-info { display: flex; align-items: center; gap: 1.2rem; }
+        .leader-live-dot {
+            width: 12px; height: 12px; border-radius: 50%;
+            background: var(--accent-green);
+            box-shadow: 0 0 10px var(--accent-green);
+            animation: pulseDot 1.5s ease infinite;
+            flex-shrink: 0;
+        }
+        .leader-live-dot.dead { background: #ef4444; box-shadow: 0 0 10px #ef4444; animation: none; }
+        @keyframes pulseDot {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.4); opacity: 0.7; }
+        }
+        .leader-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text-muted); margin-bottom: 0.3rem; }
+        .leader-name { font-size: 1.3rem; font-weight: 700; color: #c4b5fd; font-family: 'JetBrains Mono', monospace; }
+        .leader-meta { font-size: 0.8rem; color: var(--text-muted); margin-top: 0.2rem; }
+        .leader-actions { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+        .btn-danger {
+            background: rgba(239,68,68,0.12); color: #f87171;
+            border: 1px solid rgba(239,68,68,0.3); padding: 0.65rem 1.3rem;
+            border-radius: 12px; cursor: pointer; font-weight: 600; transition: all 0.2s;
+            font-family: 'Outfit', sans-serif; font-size: 0.9rem;
+        }
+        .btn-danger:hover { background: rgba(239,68,68,0.2); box-shadow: 0 4px 15px rgba(239,68,68,0.2); }
 
-        /* FORM STYLES */
-        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
-        .form-group label { display: block; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.5rem; text-transform: uppercase; }
-        select, input { width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass); color: #fff; padding: 0.7rem 1rem; border-radius: 10px; outline: none; font-family: inherit; }
-        select:focus, input:focus { border-color: var(--accent-violet); }
-        .btn-primary { background: linear-gradient(135deg, #5b21b6, #8b5cf6); color: #fff; padding: 0.8rem 1.5rem; border-radius: 12px; border: none; font-weight: 600; cursor: pointer; transition: 0.2s; }
-        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 5px 15px rgba(139,92,246,0.3); }
-
-        /* STATS */
+        /* ── STATS ROW ────────────────────────────────────────── */
         .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.25rem; margin-bottom: 2rem; }
-        .stat-card { background: var(--bg-card); border: 1px solid var(--border-glass); border-radius: 18px; padding: 1.5rem; }
-        .stat-val { font-size: 2.2rem; font-weight: 600; margin-top: 0.5rem; }
-        .stat-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); }
+        .stat-card {
+            background: var(--bg-card); border: 1px solid var(--border-glass);
+            border-radius: 18px; padding: 1.5rem; transition: border-color 0.3s;
+        }
+        .stat-card:hover { border-color: rgba(139,92,246,0.2); }
+        .stat-val { font-size: 2.1rem; font-weight: 700; margin-top: 0.4rem; line-height: 1; }
+        .stat-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-muted); }
 
-        /* TABLES */
+        /* ── GRID ─────────────────────────────────────────────── */
+        .dashboard-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem; }
+        .glass-card {
+            background: var(--bg-card); border: 1px solid var(--border-glass);
+            border-radius: 20px; padding: 1.75rem;
+            backdrop-filter: blur(15px); margin-bottom: 1.5rem;
+        }
+        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+        .card-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1.8px; color: var(--text-muted); }
+
+        /* ── NODE TABLE ───────────────────────────────────────── */
+        #nodes-section { margin-bottom: 1.5rem; }
+        .node-table-wrap { overflow-x: auto; border-radius: 14px; border: 1px solid var(--border-glass); }
+        .node-table { width: 100%; border-collapse: collapse; }
+        .node-table th, .node-table td {
+            padding: 0.85rem 1rem; text-align: left;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+        }
+        .node-table th {
+            background: rgba(8,10,22,0.9); font-size: 0.68rem;
+            text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-muted);
+        }
+        .node-table tr:last-child td { border-bottom: none; }
+        .node-table tr:hover td { background: rgba(255,255,255,0.02); }
+        .node-table tr.is-leader td { background: rgba(139,92,246, 0.05); }
+
+        /* Priority inline editor */
+        .prio-cell { display: flex; align-items: center; gap: 0.5rem; }
+        .prio-input {
+            width: 56px; background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass);
+            color: #fff; padding: 0.35rem 0.5rem; border-radius: 8px;
+            font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; text-align: center;
+            outline: none; transition: border-color 0.2s;
+        }
+        .prio-input:focus { border-color: var(--accent-violet); }
+        .prio-save-btn {
+            background: rgba(139,92,246,0.15); color: #c4b5fd;
+            border: 1px solid rgba(139,92,246,0.3); padding: 0.3rem 0.55rem;
+            border-radius: 7px; cursor: pointer; font-size: 0.75rem; transition: all 0.2s;
+            display: none;
+        }
+        .prio-input:focus ~ .prio-save-btn,
+        .prio-save-btn.visible { display: inline-block; }
+        .prio-save-btn:hover { background: rgba(139,92,246,0.3); }
+
+        /* Node badges */
+        .node-badge {
+            display: inline-flex; align-items: center; gap: 0.35rem;
+            padding: 0.25rem 0.65rem; border-radius: 20px;
+            font-size: 0.68rem; font-weight: 700; letter-spacing: 0.5px;
+        }
+        .badge-leader { background: rgba(139,92,246,0.2); color: #c4b5fd; border: 1px solid rgba(139,92,246,0.4); }
+        .badge-online { background: rgba(52,211,153,0.12); color: #34d399; border: 1px solid rgba(52,211,153,0.3); }
+        .badge-offline { background: rgba(239,68,68,0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.25); }
+        .badge-disabled { background: rgba(251,191,36,0.12); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
+        .pulse-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
+        .pulse-dot.green { background: #34d399; animation: pulseDot 1.5s infinite; }
+        .pulse-dot.red { background: #f87171; }
+        .pulse-dot.yellow { background: #fbbf24; }
+        .pulse-dot.violet { background: #c4b5fd; animation: pulseDot 1.5s infinite; }
+
+        /* Remove btn */
+        .remove-btn {
+            background: transparent; color: var(--text-muted);
+            border: 1px solid transparent; padding: 0.3rem 0.6rem;
+            border-radius: 7px; cursor: pointer; font-size: 0.75rem;
+            transition: all 0.2s;
+        }
+        .remove-btn:hover { color: #f87171; border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.05); }
+        .enable-btn {
+            background: rgba(52,211,153,0.1); color: #34d399;
+            border: 1px solid rgba(52,211,153,0.25); padding: 0.3rem 0.65rem;
+            border-radius: 7px; cursor: pointer; font-size: 0.75rem;
+            transition: all 0.2s; margin-right: 0.3rem;
+        }
+        .enable-btn:hover { background: rgba(52,211,153,0.22); }
+        .offline-btn {
+            background: rgba(251,191,36,0.08); color: #fbbf24;
+            border: 1px solid rgba(251,191,36,0.25); padding: 0.3rem 0.65rem;
+            border-radius: 7px; cursor: pointer; font-size: 0.75rem;
+            transition: all 0.2s; margin-right: 0.3rem;
+        }
+        .offline-btn:hover { background: rgba(251,191,36,0.18); }
+
+        /* ── ELECTION CONSOLE ─────────────────────────────────── */
+        #election-card {
+            display: none;
+            border: 1px solid rgba(52,211,153,0.3);
+            background: linear-gradient(135deg, rgba(52,211,153,0.04), transparent);
+            margin-bottom: 1.5rem; border-radius: 20px; padding: 1.75rem;
+            animation: fadeIn 0.3s ease;
+        }
+        #election-log {
+            font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: #34d399;
+            height: 160px; overflow-y: auto;
+            background: rgba(0,0,0,0.5); padding: 1rem; border-radius: 10px;
+            border: 1px solid rgba(52,211,153,0.15);
+        }
+        #election-log .log-line { padding: 0.15rem 0; }
+        #election-log .log-line.winner { color: #fcd34d; font-weight: 700; }
+        #election-log .log-line.error { color: #f87171; }
+        .live-dot { width: 8px; height: 8px; background: #34d399; border-radius: 50%; display: inline-block; box-shadow: 0 0 8px #34d399; animation: pulseDot 1.5s infinite; }
+
+        /* ── STANDARD TABLE (shared) ──────────────────────────── */
         .scroll-wrap { overflow-x: auto; border-radius: 12px; border: 1px solid var(--border-glass); }
-        table { width: 100%; border-collapse: collapse; min-width: 800px; }
-        th, td { padding: 1rem; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.03); }
-        th { background: rgba(8,10,22,0.9); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); }
-        td { font-size: 0.9rem; }
-        tr:hover { background: rgba(255,255,255,0.02); }
+        table { width: 100%; border-collapse: collapse; min-width: 600px; }
+        th, td { padding: 0.95rem 1rem; text-align: left; border-bottom: 1px solid rgba(255,255,255,0.03); }
+        th { background: rgba(8,10,22,0.9); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-muted); }
+        td { font-size: 0.88rem; }
+        tr:hover { background: rgba(255,255,255,0.015); }
 
-        /* BADGES */
-        .badge { padding: 0.25rem 0.65rem; border-radius: 8px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; }
-        .bg-public { background: rgba(52, 211, 153, 0.15); color: #34d399; }
-        .bg-private { background: rgba(59, 130, 246, 0.15); color: #60a5fa; }
-        .bg-protected { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
-        .bg-error { background: rgba(239, 68, 68, 0.15); color: #f87171; }
-        .bg-info { background: rgba(139, 92, 246, 0.15); color: #c4b5fd; }
+        /* ── FORMS ────────────────────────────────────────────── */
+        .form-group label { display: block; font-size: 0.7rem; color: var(--text-muted); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.8px; }
+        select, input[type="text"], input[type="password"] {
+            width: 100%; background: rgba(255,255,255,0.05); border: 1px solid var(--border-glass);
+            color: #fff; padding: 0.7rem 1rem; border-radius: 10px; outline: none;
+            font-family: inherit; font-size: 0.9rem;
+        }
+        select option { background: #0d1122; color: #fff; }
+        select:focus, input:focus { border-color: var(--accent-violet); }
+        .btn-primary {
+            background: linear-gradient(135deg, #5b21b6, #8b5cf6); color: #fff;
+            padding: 0.8rem 1.5rem; border-radius: 12px; border: none; font-weight: 600;
+            cursor: pointer; transition: 0.2s; font-family: inherit; font-size: 0.9rem;
+        }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(139,92,246,0.35); }
 
-        .kick-btn { background: rgba(239, 68, 68, 0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.2); padding: 0.35rem 0.7rem; border-radius: 8px; cursor: pointer; }
-        .approve-btn { background: rgba(52, 211, 153, 0.1); color: #34d399; border: 1px solid rgba(52,211,153,0.2); padding: 0.35rem 0.7rem; border-radius: 8px; cursor: pointer; margin-right: 0.4rem; }
-        .deny-btn { background: rgba(239, 68, 68, 0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.2); padding: 0.35rem 0.7rem; border-radius: 8px; cursor: pointer; }
-        
-        .user-tag { background: rgba(255,255,255,0.05); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.8rem; border: 1px solid var(--border-glass); }
-        .live-dot { width: 8px; height: 8px; background: #34d399; border-radius: 50%; display: inline-block; margin-right: 0.5rem; box-shadow: 0 0 8px #34d399; }
+        /* ── BADGES (general) ─────────────────────────────────── */
+        .badge { padding: 0.25rem 0.65rem; border-radius: 8px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; }
+        .bg-public { background: rgba(52,211,153,0.12); color: #34d399; }
+        .bg-private { background: rgba(59,130,246,0.12); color: #60a5fa; }
+        .bg-protected { background: rgba(245,158,11,0.12); color: #fbbf24; }
+        .bg-error, .bg-critical { background: rgba(239,68,68,0.12); color: #f87171; }
+        .bg-info { background: rgba(139,92,246,0.12); color: #c4b5fd; }
+        .bg-warning { background: rgba(251,191,36,0.12); color: #fbbf24; }
+
+        .kick-btn { background: rgba(239,68,68,0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.2); padding: 0.35rem 0.7rem; border-radius: 8px; cursor: pointer; transition: 0.2s; }
+        .kick-btn:hover { background: rgba(239,68,68,0.2); }
+        .approve-btn { background: rgba(52,211,153,0.1); color: #34d399; border: 1px solid rgba(52,211,153,0.2); padding: 0.35rem 0.7rem; border-radius: 8px; cursor: pointer; margin-right: 0.4rem; }
+        .deny-btn { background: rgba(239,68,68,0.1); color: #f87171; border: 1px solid rgba(239,68,68,0.2); padding: 0.35rem 0.7rem; border-radius: 8px; cursor: pointer; }
+        .user-tag { background: rgba(255,255,255,0.05); padding: 0.2rem 0.5rem; border-radius: 5px; font-size: 0.8rem; border: 1px solid var(--border-glass); font-family: 'JetBrains Mono', monospace; }
+
+        /* ── toast ────────────────────────────────────────────── */
+        #toast {
+            position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 999;
+            background: rgba(13,17,34,0.95); border: 1px solid var(--border-glass);
+            backdrop-filter: blur(20px); border-radius: 14px; padding: 0.85rem 1.4rem;
+            font-size: 0.875rem; color: var(--text-main);
+            transform: translateY(20px); opacity: 0; pointer-events: none;
+            transition: all 0.3s ease;
+        }
+        #toast.show { transform: translateY(0); opacity: 1; }
+        #toast.success { border-color: rgba(52,211,153,0.4); color: #34d399; }
+        #toast.error { border-color: rgba(239,68,68,0.4); color: #f87171; }
+
+        /* ── responsive ───────────────────────────────────────── */
+        @media (max-width: 900px) {
+            .dashboard-grid { grid-template-columns: 1fr; }
+            .stats-row { grid-template-columns: repeat(2, 1fr); }
+        }
     </style>
 </head>
 <body>
+
+    <!-- NAV -->
     <nav>
         <div class="nav-brand">⬡ <span>SecureLog</span> Infrastructure</div>
         <div class="nav-right">
             <span class="admin-badge">PLATFORM ADMIN</span>
-            <button class="btn-sm" onclick="logout()">Sign Out</button>
+            <button class="btn-sm" id="signout-btn" onclick="logout()">Sign Out</button>
         </div>
     </nav>
 
+    <!-- TABS -->
     <div class="tab-nav">
         <button class="tab-btn active" id="tab-sessions" onclick="switchTab('sessions')">🌐 Topology & Sessions</button>
+        <button class="tab-btn" id="tab-nodes" onclick="switchTab('nodes')">🖥 Node Manager</button>
         <button class="tab-btn" id="tab-requests" onclick="switchTab('requests')">📝 Access Requests <span id="req-count" class="tab-badge" style="display:none">0</span></button>
         <button class="tab-btn" id="tab-registry" onclick="switchTab('registry')">⚙ Service Registry</button>
         <button class="tab-btn" id="tab-users" onclick="switchTab('users')">👥 User Directory</button>
@@ -121,14 +311,46 @@
     </div>
 
     <main>
-        <!-- SESSIONS TAB -->
+
+        <!-- ═══════════════════════════════════════════
+             SESSIONS TAB
+        ════════════════════════════════════════════ -->
         <div class="tab-panel active" id="panel-sessions">
+
+            <!-- Leader Banner -->
+            <div id="leader-banner">
+                <div class="leader-info">
+                    <div class="leader-live-dot" id="leader-dot"></div>
+                    <div>
+                        <div class="leader-label">Distributed System Leader</div>
+                        <div class="leader-name" id="leader-name-text">Searching…</div>
+                        <div class="leader-meta" id="leader-meta-text">Waiting for first heartbeat</div>
+                    </div>
+                </div>
+                <div class="leader-actions">
+                    <button class="btn-sm" onclick="switchTab('nodes')" id="manage-nodes-btn">Manage Nodes →</button>
+                    <button class="btn-danger" id="crash-btn" onclick="crashLeader()">🛑 Force Crash Leader</button>
+                </div>
+            </div>
+
+            <!-- Election Console (shown during failover) -->
+            <div id="election-card">
+                <div class="card-header">
+                    <div class="card-title" style="color: var(--accent-green);">Live Election Console</div>
+                    <div class="live-dot"></div>
+                </div>
+                <div id="election-log"></div>
+            </div>
+
+            <!-- Stats -->
             <div class="stats-row">
-                <div class="stat-card"><div class="stat-label">Active Users</div><div class="stat-val" style="color:#34d399" id="stat-active">0</div></div>
-                <div class="stat-card"><div class="stat-label">Provisioned Svc</div><div class="stat-val" style="color:#60a5fa" id="stat-svc">0</div></div>
+                <div class="stat-card"><div class="stat-label">Active Sessions</div><div class="stat-val" style="color:#34d399" id="stat-active">0</div></div>
+                <div class="stat-card"><div class="stat-label">Nodes Online</div><div class="stat-val" style="color:#c4b5fd" id="stat-nodes">0</div></div>
                 <div class="stat-card"><div class="stat-label">Requests/min</div><div class="stat-val" style="color:#fbbf24" id="stat-rpm">0</div></div>
                 <div class="stat-card"><div class="stat-label">Errors (60s)</div><div class="stat-val" style="color:#f87171" id="stat-err">0</div></div>
             </div>
+
+            <!-- Sessions table -->
             <div class="glass-card">
                 <div class="card-header"><div class="card-title">Live Connectivity Topology</div></div>
                 <div class="scroll-wrap">
@@ -140,7 +362,67 @@
             </div>
         </div>
 
-        <!-- REQUESTS TAB -->
+        <!-- ═══════════════════════════════════════════
+             NODE MANAGER TAB
+        ════════════════════════════════════════════ -->
+        <div class="tab-panel" id="panel-nodes">
+            <div class="dashboard-grid">
+                <div class="glass-card" style="margin-bottom:0">
+                    <div class="card-header">
+                        <div>
+                            <div class="card-title" style="margin-bottom:0.4rem">Distributed Node Registry</div>
+                            <div style="font-size:0.8rem; color:var(--text-muted)">
+                                Edit priority and press ✓ — takes effect on next election (~5s).
+                                Higher priority wins. Ties broken by seniority.
+                            </div>
+                        </div>
+                        <button class="btn-sm" onclick="pollNodes()">↺ Refresh</button>
+                    </div>
+                    <div class="node-table-wrap">
+                        <table class="node-table">
+                            <thead>
+                                <tr>
+                                    <th>Node ID</th>
+                                    <th>Role</th>
+                                    <th>Priority</th>
+                                    <th>Age</th>
+                                    <th>Last Seen</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="node-manager-list"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Register New Node -->
+                <div class="glass-card" style="margin-bottom:0">
+                    <div class="card-header"><div class="card-title">Register New Node</div></div>
+                    <div class="form-group" style="margin-bottom:1rem">
+                        <label>Node ID</label>
+                        <input type="text" id="new-node-id" placeholder="e.g. Node-C">
+                    </div>
+                    <div class="form-group" style="margin-bottom:1.25rem">
+                        <label>Priority (higher = preferred leader)</label>
+                        <input type="number" id="new-node-priority" min="0" max="999" value="0" style="width:100%; background:rgba(255,255,255,0.05); border:1px solid var(--border-glass); color:#fff; padding:0.7rem 1rem; border-radius:10px; outline:none; font-family:inherit; font-size:0.9rem;"
+                            onfocus="this.style.borderColor='var(--accent-violet)'" onblur="this.style.borderColor=''">
+                    </div>
+                    <button class="btn-primary" style="width:100%" onclick="addNode()" id="add-node-btn">⊕ Register Node</button>
+                    <p style="font-size:0.73rem; color:var(--text-muted); margin-top:1rem; text-align:center">
+                        Pre-register a node slot. The simulator process with a matching node ID will automatically join on next heartbeat.
+                    </p>
+                </div>
+            </div>
+            <p style="font-size:0.75rem; color:var(--text-muted); margin-top:1rem; padding-left:0.25rem">
+                ⚡ Leader runs the platform workload. Followers stand by and monitor.
+                A node is <em>offline</em> if it hasn't sent a heartbeat in the last 15 seconds.
+                <strong style="color:#fbbf24">DISABLED</strong> nodes are excluded from elections — use <em>Bring Online</em> to re-enable.
+            </p>
+        </div>
+
+        <!-- ═══════════════════════════════════════════
+             ACCESS REQUESTS TAB
+        ════════════════════════════════════════════ -->
         <div class="tab-panel" id="panel-requests">
             <div class="glass-card">
                 <div class="card-header"><div class="card-title">Pending Access Authorizations</div></div>
@@ -153,7 +435,9 @@
             </div>
         </div>
 
-        <!-- REGISTRY TAB -->
+        <!-- ═══════════════════════════════════════════
+             REGISTRY TAB
+        ════════════════════════════════════════════ -->
         <div class="tab-panel" id="panel-registry">
             <div class="dashboard-grid">
                 <div class="glass-card">
@@ -173,18 +457,24 @@
                     </div>
                     <div class="form-group" style="margin-bottom:1rem">
                         <label>Access Protocol</label>
-                        <select id="new-svc-mode">
+                        <select id="new-svc-mode" onchange="toggleAllowedUsersField()">
                             <option value="public">Public (Open Visibility)</option>
                             <option value="private">Private (Invite Only)</option>
-                            <option value="protected">Protected (Admin Approval Required)</option>
+                            <option value="protected">Protected (Admin Approval)</option>
                         </select>
                     </div>
-                    <button class="btn-primary" style="width:100%" onclick="provisionService()">Deploy Service Node</button>
+                    <div class="form-group" id="allowed-users-group" style="margin-bottom:1rem; display:none">
+                        <label>Allowed Users (comma separated)</label>
+                        <input type="text" id="new-svc-allowed" placeholder="Alice, Bob...">
+                    </div>
+                    <button class="btn-primary" style="width:100%" onclick="provisionService()" id="deploy-service-btn">Deploy Service Node</button>
                 </div>
             </div>
         </div>
 
-        <!-- USERS TAB -->
+        <!-- ═══════════════════════════════════════════
+             USERS TAB
+        ════════════════════════════════════════════ -->
         <div class="tab-panel" id="panel-users">
             <div class="dashboard-grid">
                 <div class="glass-card">
@@ -202,46 +492,238 @@
                         <label>Display ID</label>
                         <input type="text" id="new-user-name" placeholder="Name">
                     </div>
-                    <button class="btn-primary" style="width:100%" onclick="onboardUser()">Initialize User Record</button>
-                    <p style="font-size:0.75rem; color:var(--text-muted); margin-top:1rem; text-align:center">Note: Admin users must be created manually in DB.</p>
+                    <button class="btn-primary" style="width:100%" onclick="onboardUser()" id="onboard-user-btn">Initialize User Record</button>
+                    <p style="font-size:0.75rem; color:var(--text-muted); margin-top:1rem; text-align:center">Admin users must be created manually in DB.</p>
                 </div>
             </div>
         </div>
 
-        <!-- LOGS TAB -->
-        <div class="tab-panel" id="panel-logs">
-            <div class="glass-card">
-                <div class="card-header">
-                    <div class="card-title">Global Event Audit Stream</div>
-                    <button class="btn-sm" onclick="clearLogs()">Reset Buffer</button>
-                </div>
-                <div class="scroll-wrap" style="max-height:600px">
-                    <table style="font-family:'JetBrains Mono', monospace; font-size:0.8rem">
-                        <thead><tr><th>Timestamp</th><th>Service</th><th>User</th><th>Level</th><th>Message</th></tr></thead>
-                        <tbody id="logs-list"></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </main>
-
-    <script>
-        const token = localStorage.getItem('auth_token');
-        if (!token) window.location.href = '/login.html';
-        const headers = { 'X-Auth-Token': token, 'Content-Type': 'application/json' };
-
-        function switchTab(name) {
-            document.querySelectorAll('.tab-panel, .tab-btn').forEach(el => el.classList.remove('active'));
-            document.getElementById(`panel-${name}`).classList.add('active');
-            document.getElementById(`tab-${name}`).classList.add('active');
+        <!-- ══════════════════════════════════════�        function showToast(msg, type = 'success') {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = `show ${type}`;
+            setTimeout(() => t.className = '', 2800);
         }
 
-        async function api(url, opt={}) {
-            const res = await fetch(url, { ...opt, headers: { ...headers, ...opt.headers } });
-            if (res.status === 401) window.location.href = '/login.html';
-            return res.json();
+        function eleLog(msg, cls = '') {
+            const log = document.getElementById('election-log');
+            log.innerHTML += `<div class="log-line ${cls}">> ${msg}</div>`;
+            log.scrollTop = log.scrollHeight;
         }
 
+        function fmtAge(ts) {
+            const diff = Math.floor(Date.now() / 1000 - ts);
+            if (diff < 60) return `${diff}s`;
+            if (diff < 3600) return `${Math.floor(diff / 60)}m ${diff % 60}s`;
+            return `${Math.floor(diff / 3600)}h ${Math.floor((diff % 3600) / 60)}m`;
+        }
+
+        // ── Leader Banner Update ───────────────────────────────────────────────
+        async function updateLeaderBanner() {
+            try {
+                const leader = await api('/api/leader/current');
+                const banner = document.getElementById('leader-banner');
+                const dot    = document.getElementById('leader-dot');
+                const name   = document.getElementById('leader-name-text');
+                const meta   = document.getElementById('leader-meta-text');
+
+                if (leader.leader_id && leader.is_alive) {
+                    currentLeaderId = leader.leader_id;
+                    banner.className = '';
+                    dot.className = 'leader-live-dot';
+                    name.textContent = `👑 ${leader.leader_id}`;
+                    name.style.color = '#c4b5fd';
+                    meta.textContent = `Lease expires in ${leader.expires_in}s — node is running platform workload`;
+                } else if (leader.leader_id && !leader.is_alive) {
+                    banner.className = 'no-leader';
+                    dot.className = 'leader-live-dot dead';
+                    name.textContent = `⚠ ${leader.leader_id} (unresponsive)`;
+                    name.style.color = '#fbbf24';
+                    meta.textContent = 'Leader lease expired — re-election in progress…';
+                } else {
+                    currentLeaderId = null;
+                    banner.className = 'no-leader';
+                    dot.className = 'leader-live-dot dead';
+                    name.textContent = 'No Leader Elected';
+                    name.style.color = '#f87171';
+                    meta.textContent = 'Waiting for a node to acquire leadership. Start a simulator node.';
+                }
+            } catch (e) { /* silently ignore */ }
+        }
+
+        // ── Node Manager ───────────────────────────────────────────────────────
+        async function pollNodes() {
+            const nodes = await api('/api/nodes').catch(() => []);
+            const tbody = document.getElementById('node-manager-list');
+
+            // Count online (active + enabled)
+            const online = nodes.filter(n => n.is_active && n.node_status === 'enabled').length;
+            document.getElementById('stat-nodes').textContent = online;
+
+            if (!nodes.length) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:2rem">No nodes registered. Start simulator nodes or register one above.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = nodes.map(n => {
+                const isLeader = n.node_id === currentLeaderId;
+                const isDisabled = n.node_status === 'disabled';
+                let roleBadge;
+                if (isDisabled) {
+                    roleBadge = `<span class="node-badge badge-disabled"><span class="pulse-dot yellow"></span> DISABLED</span>`;
+                } else if (isLeader) {
+                    roleBadge = `<span class="node-badge badge-leader"><span class="pulse-dot violet"></span> LEADER</span>`;
+                } else if (n.is_active) {
+                    roleBadge = `<span class="node-badge badge-online"><span class="pulse-dot green"></span> ONLINE</span>`;
+                } else {
+                    roleBadge = `<span class="node-badge badge-offline"><span class="pulse-dot red"></span> OFFLINE</span>`;
+                }
+
+                const age = fmtAge(n.created_at);
+                const lastSeen = n.last_seen > 0 ? fmtAge(n.last_seen) + ' ago' : 'Never';
+
+                let actionBtns = '';
+                if (isDisabled) {
+                    actionBtns = `<button class="enable-btn" onclick="enableNode('${n.node_id}')" title="Allow this node to rejoin elections">✅ Bring Online</button>`;
+                } else {
+                    actionBtns = `<button class="offline-btn" onclick="disableNode('${n.node_id}')" title="Exclude from elections">⏸ Take Offline</button>`;
+                }
+                actionBtns += `<button class="remove-btn" onclick="removeNode('${n.node_id}')" title="Remove from registry">🗑</button>`;
+
+                return `
+                <tr class="${isLeader && !isDisabled ? 'is-leader' : ''}">
+                    <td>
+                        <span class="user-tag" style="${isLeader && !isDisabled ? 'border-color:#8b5cf6; color:#c4b5fd' : isDisabled ? 'border-color:#d97706; color:#fbbf24' : ''}">${n.node_id}</span>
+                    </td>
+                    <td>${roleBadge}</td>
+                    <td>
+                        <div class="prio-cell">
+                            <input class="prio-input"
+                                id="prio-${n.node_id}"
+                                type="number" min="0" max="999"
+                                value="${n.priority}"
+                                onkeydown="if(event.key==='Enter') savePriority('${n.node_id}')"
+                                oninput="document.getElementById('prio-save-${n.node_id}').classList.add('visible')"
+                                aria-label="Priority for node ${n.node_id}"
+                            >
+                            <button class="prio-save-btn" id="prio-save-${n.node_id}"
+                                onclick="savePriority('${n.node_id}')"
+                                title="Save priority">✓
+                            </button>
+                        </div>
+                    </td>
+                    <td style="color:var(--text-muted); font-family:'JetBrains Mono',monospace; font-size:0.8rem">${age}</td>
+                    <td style="color:var(--text-muted); font-family:'JetBrains Mono',monospace; font-size:0.8rem">${lastSeen}</td>
+                    <td>${actionBtns}</td>
+                </tr>`;
+            }).join('');
+        async function savePriority(nodeId) {
+            const input = document.getElementById(`prio-${nodeId}`);
+            const prio  = parseInt(input.value, 10);
+            if (isNaN(prio) || prio < 0) { showToast('Priority must be a non-negative integer', 'error'); return; }
+
+            const res = await api(`/api/nodes/${nodeId}/priority`, {
+                method: 'PATCH',
+                body: JSON.stringify({ priority: prio })
+            });
+
+            if (res.status === 'updated') {
+                showToast(`✓ Node [${nodeId}] priority set to ${prio} — re-election on next heartbeat`);
+                document.getElementById(`prio-save-${nodeId}`)?.classList.remove('visible');
+            } else {
+                showToast(res.detail || 'Failed to update priority', 'error');
+            }
+            await pollNodes();
+        }
+
+        async function removeNode(nodeId) {
+            if (!confirm(`Remove node [${nodeId}] from registry?\n\nIf it is still running it will re-register on the next heartbeat.`)) return;
+            const res = await api(`/api/nodes/${nodeId}`, { method: 'DELETE' });
+            if (res.status === 'removed') {
+                showToast(`Node [${nodeId}] removed from registry`);
+            } else {
+                showToast(res.detail || 'Failed to remove node', 'error');
+            }
+            await pollNodes();
+        }
+
+        async function enableNode(nodeId) {
+            const res = await api(`/api/nodes/${nodeId}/enable`, { method: 'POST' });
+            if (res.status === 'enabled') {
+                showToast(`✅ Node [${nodeId}] is back ONLINE — eligible for election`, 'success');
+            } else {
+                showToast(res.detail || 'Failed to enable node', 'error');
+            }
+            await pollNodes();
+        }
+
+        async function disableNode(nodeId) {
+            if (!confirm(`Take node [${nodeId}] offline?\n\nIt will be excluded from elections until you bring it back online.`)) return;
+            const res = await api(`/api/nodes/${nodeId}/disable`, { method: 'POST' });
+            if (res.status === 'disabled') {
+                showToast(`Node [${nodeId}] taken offline — excluded from elections`);
+            } else {
+                showToast(res.detail || 'Failed to disable node', 'error');
+            }
+            await pollNodes();
+        }
+
+        async function addNode() {
+            const nodeId   = document.getElementById('new-node-id').value.trim();
+            const priority = parseInt(document.getElementById('new-node-priority').value, 10) || 0;
+            if (!nodeId) { showToast('Node ID is required', 'error'); return; }
+            const res = await api('/api/nodes', {
+                method: 'POST',
+                body: JSON.stringify({ node_id: nodeId, priority })
+            });
+            if (res.status === 'registered') {
+                showToast(`Node [${nodeId}] registered — start a simulator with matching ID to activate`);
+                document.getElementById('new-node-id').value = '';
+                document.getElementById('new-node-priority').value = '0';
+            } else {
+                showToast(res.detail || 'Failed to register node', 'error');
+            }
+            await pollNodes();
+        }
+
+        // ── Force Crash ────────────────────────────────────────────────────────
+        async function crashLeader() {
+            if (!currentLeaderId) { showToast('No active leader to crash', 'error'); return; }
+            if (!confirm(`Force-crash leader [${currentLeaderId}]?\n\nThe node will shut itself down immediately. Election will re-run based on priority & age.`)) return;
+
+            document.getElementById('election-card').style.display = 'block';
+            document.getElementById('election-log').innerHTML = '';
+            eleLog(`CRASH SIGNAL sent to [${currentLeaderId}]`);
+
+            await api('/api/leader/crash', { method: 'POST' });
+
+            setTimeout(() => eleLog('Lease invalidated. Scanning cluster for candidates…'), 800);
+            setTimeout(async () => {
+                const nodes = await api('/api/nodes');
+                const active = (nodes || []).filter(n => n.is_active && n.node_id !== currentLeaderId);
+                eleLog(`${active.length} candidate(s) found.`);
+                active.forEach(n => eleLog(`  Candidate [${n.node_id}]: prio=${n.priority}, age=${fmtAge(n.created_at)}`));
+            }, 1800);
+
+            setTimeout(async () => {
+                const nodes = await api('/api/nodes');
+                const active = (nodes || []).filter(n => n.is_active && n.node_id !== currentLeaderId);
+                const best = active.sort((a,b) => b.priority - a.priority || a.created_at - b.created_at)[0];
+                if (best) {
+                    eleLog(`<strong>WINNER ELECTED:</strong> [${best.node_id}] (prio=${best.priority})`, 'winner');
+                    eleLog('Propagating leadership tokens to all followers…');
+                } else {
+                    eleLog('No active candidates. Waiting for next heartbeat cycle…', 'error');
+                }
+            }, 4000);
+
+            setTimeout(() => {
+                document.getElementById('election-card').style.display = 'none';
+                poll();
+            }, 9000);
+        }
+
+        // ── Main Poll ─────────────────────────────────────────────────────────
         async function poll() {
             try {
                 const [sessions, requests, registry, users, metrics, logs] = await Promise.all([
@@ -250,45 +732,47 @@
                     api('/api/registry'),
                     api('/api/auth/users'),
                     api('/api/metrics'),
-                    api('/api/logs/recent')
+                    api('/api/logs/recent'),
                 ]);
 
-                // Update Stats
-                document.getElementById('stat-active').innerText = sessions.length;
-                document.getElementById('stat-svc').innerText = registry.length;
-                document.getElementById('stat-rpm').innerText = metrics.logs_per_second;
-                document.getElementById('stat-err').innerText = metrics.error_count_60s;
+                await updateLeaderBanner();
+                await pollNodes();
 
-                // Update Request Badge
+                // Stats
+                document.getElementById('stat-active').textContent = sessions.length;
+                document.getElementById('stat-rpm').textContent    = metrics.logs_per_second ?? 0;
+                document.getElementById('stat-err').textContent    = metrics.error_count_60s ?? 0;
+
+                // Request badge
                 const rBadge = document.getElementById('req-count');
-                if (requests.length > 0) { rBadge.innerText = requests.length; rBadge.style.display = 'inline'; }
+                if (requests.length > 0) { rBadge.textContent = requests.length; rBadge.style.display = 'inline'; }
                 else rBadge.style.display = 'none';
 
-                // Render Sessions
+                // Sessions
                 document.getElementById('sessions-list').innerHTML = sessions.map(s => `
                     <tr>
                         <td><span class="user-tag">${s.user_name}</span></td>
                         <td><strong>${s.service_name}</strong></td>
-                        <td><span class="live-dot"></span>Active</td>
+                        <td><span class="pulse-dot green" style="margin-right:6px"></span>Active</td>
                         <td>${Math.floor(s.duration_seconds/60)}m ${s.duration_seconds%60}s</td>
                         <td><button class="kick-btn" onclick="kick('${s.id}')">Disconnect</button></td>
                     </tr>
-                `).join('');
+                `).join('') || `<tr><td colspan="5" style="color:var(--text-muted); text-align:center; padding:1.5rem">No active sessions</td></tr>`;
 
-                // Render Requests
+                // Requests
                 document.getElementById('requests-list').innerHTML = requests.map(r => `
                     <tr>
                         <td>${r.user_name}</td>
                         <td>${r.service_name}</td>
-                        <td>${new Date(r.timestamp).toLocaleTimeString()}</td>
+                        <td style="color:var(--text-muted); font-size:0.8rem">${new Date(r.timestamp).toLocaleTimeString()}</td>
                         <td>
                             <button class="approve-btn" onclick="requestAction('${r.id}','approve')">Approve</button>
                             <button class="deny-btn" onclick="requestAction('${r.id}','deny')">Deny</button>
                         </td>
                     </tr>
-                `).join('');
+                `).join('') || `<tr><td colspan="4" style="color:var(--text-muted); text-align:center; padding:1.5rem">No pending requests</td></tr>`;
 
-                // Render Registry
+                // Registry
                 document.getElementById('registry-list').innerHTML = registry.map(svc => `
                     <tr>
                         <td>${svc.name}</td>
@@ -298,53 +782,82 @@
                     </tr>
                 `).join('');
 
-                // Render Users
+                // Users
                 document.getElementById('users-list').innerHTML = users.map(u => `
                     <tr>
                         <td>${u.name}</td>
-                        <td><span class="badge ${u.role==='admin'?'bg-info':'bg-info'}" style="opacity:0.8">${u.role}</span></td>
+                        <td><span class="badge bg-info">${u.role}</span></td>
                         <td>${u.name !== 'admin' ? `<button class="deny-btn" onclick="deleteUser('${u.name}')">Delete</button>` : ''}</td>
                     </tr>
                 `).join('');
 
-                // Render Logs
-                document.getElementById('logs-list').innerHTML = logs.slice(0, 50).map(l => `
+                // Logs
+                document.getElementById('logs-list').innerHTML = logs.slice(0, 60).map(l => `
                     <tr>
                         <td style="color:var(--text-muted)">${l.timestamp.split('T')[1].split('.')[0]}</td>
                         <td>${l.service_name}</td>
                         <td><span class="user-tag">${l.user_tag}</span></td>
                         <td><span class="badge bg-${l.severity.toLowerCase()}">${l.severity}</span></td>
-                        <td>${l.message}</td>
+                        <td style="max-width:400px; overflow:hidden; text-overflow:ellipsis">${l.message}</td>
                     </tr>
                 `).join('');
 
-            } catch (e) { console.error(e); }
+            } catch (e) { console.error('Poll error:', e); }
         }
 
+        // ── Actions ────────────────────────────────────────────────────────────
         async function provisionService() {
-            const name = document.getElementById('new-svc-name').value;
-            const mode = document.getElementById('new-svc-mode').value;
-            if (!name) return;
-            await api('/api/registry', { method: 'POST', body: JSON.stringify({ name, mode }) });
+            const name    = document.getElementById('new-svc-name').value.trim();
+            const mode    = document.getElementById('new-svc-mode').value;
+            const allowed = document.getElementById('new-svc-allowed').value
+                              .split(',').map(s => s.trim()).filter(Boolean);
+            if (!name) { showToast('Service name is required', 'error'); return; }
+            await api('/api/registry', { method: 'POST', body: JSON.stringify({ name, mode, allowed_users: allowed }) });
             document.getElementById('new-svc-name').value = '';
+            document.getElementById('new-svc-allowed').value = '';
+            showToast(`Service [${name}] provisioned`);
             poll();
+        }
+
+        function toggleAllowedUsersField() {
+            const mode  = document.getElementById('new-svc-mode').value;
+            const group = document.getElementById('allowed-users-group');
+            group.style.display = mode === 'private' ? 'block' : 'none';
         }
 
         async function onboardUser() {
-            const name = document.getElementById('new-user-name').value;
-            if (!name) return;
+            const name = document.getElementById('new-user-name').value.trim();
+            if (!name) { showToast('Name is required', 'error'); return; }
             await api('/api/auth/users', { method: 'POST', body: JSON.stringify({ name }) });
             document.getElementById('new-user-name').value = '';
+            showToast(`User [${name}] onboarded`);
             poll();
         }
 
-        async function toggleService(name) { await api(`/api/registry/${name}/toggle`, { method: 'POST' }); poll(); }
-        async function deleteUser(name) { if(confirm(`Delete ${name}?`)) { await api(`/api/auth/users/${name}`, { method: 'DELETE' }); poll(); } }
-        async function kick(id) { await api(`/api/sessions/kick/${id}`, { method: 'POST' }); poll(); }
-        async function requestAction(id, act) { await api(`/api/requests/${id}/${act}`, { method: 'POST' }); poll(); }
+        async function toggleService(name) {
+            await api(`/api/registry/${name}/toggle`, { method: 'POST' });
+            poll();
+        }
+        async function deleteUser(name) {
+            if (!confirm(`Delete user [${name}]?`)) return;
+            await api(`/api/auth/users/${name}`, { method: 'DELETE' });
+            showToast(`User [${name}] deleted`);
+            poll();
+        }
+        async function kick(id) {
+            await api(`/api/sessions/kick/${id}`, { method: 'POST' });
+            poll();
+        }
+        async function requestAction(id, act) {
+            await api(`/api/requests/${id}/${act}`, { method: 'POST' });
+            showToast(`Request ${act}d`);
+            poll();
+        }
         function logout() { localStorage.clear(); window.location.href = '/login.html'; }
+        function clearLogs() { document.getElementById('logs-list').innerHTML = ''; }
 
-        setInterval(poll, 2000);
+        // ── Boot ───────────────────────────────────────────────────────────────
+        setInterval(poll, 2500);
         poll();
     </script>
 </body>

@@ -8,4 +8,5 @@ ENV PYTHONUNBUFFERED=1
 ENV DB_PATH=/data/logs.db
 ENV ADMIN_PASSWORD=admin123
 EXPOSE 8000
-CMD ["python", "collector/server.py"]
+RUN chmod +x start_all.sh
+CMD ["./start_all.sh"]

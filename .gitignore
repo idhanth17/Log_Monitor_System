@@ -7,3 +7,9 @@ logs.db-journal
 nul
 /data
 *.log
+server_err.txt
+srv_err.log
+fix.py
+tmp_tok.json
+tmp.txt
+output.txt

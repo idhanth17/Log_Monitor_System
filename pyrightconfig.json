@@ -1,8 +1,15 @@
 {
   "venv": "venv",
-  "venvPath": ".",
+  "venvPath": "./",
   "pythonVersion": "3.8",
   "reportMissingImports": true,
-  "include": ["."],
-  "exclude": ["**/__pycache__", "venv"]
+  "include": [
+    "agents",
+    "collector",
+    "dashboard"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "venv"
+  ]
 }
