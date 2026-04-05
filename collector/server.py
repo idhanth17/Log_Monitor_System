@@ -615,6 +615,32 @@ async def request_access(body: RequestAccessRequest, request: Request):
     await write_log_async(body.service_name, user["name"], "INFO", f"Access requested")
     return {"status": "pending", "id": req_id}
 
+@app.on_event("startup")
+async def node_rehydration():
+    """
+    On server boot, re-spawn simulator processes for all nodes 
+    that were previously marked as 'enabled' in the database.
+    """
+    print("🚀 [System] Initializing distributed node rehydration...")
+    enabled_nodes = await run_query("SELECT node_id, priority FROM node_registry WHERE node_status = 'enabled'", fetch_all=True)
+    
+    if not enabled_nodes:
+        print("ℹ️ [System] No enabled nodes found in registry. Skipping rehydration.")
+        return
+
+    script_path = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "agents", "simulator.py"))
+    
+    spawn_count = 0
+    for node in enabled_nodes:
+        try:
+            # Re-spawn the process safely
+            subprocess.Popen([sys.executable, script_path, node["node_id"], str(node["priority"])])
+            spawn_count += 1
+        except Exception as e:
+            print(f"❌ [System] Failed to rehydrate node {node['node_id']}: {e}")
+
+    print(f"✅ [System] Rehydrated {spawn_count} nodes into the cluster cluster.")
+
 app.mount("/", StaticFiles(directory=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "dashboard", "static"), html=True), name="static")
 
 if __name__ == "__main__":
