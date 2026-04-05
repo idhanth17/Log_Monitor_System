@@ -410,7 +410,7 @@ async def leader_elect(body: ElectRequest):
     if l_elect and l_elect['leader_id'] == body.node_id:
         new_exp = now + 12
         await run_query('UPDATE leader_election SET expires = ? WHERE id = 1', (new_exp,), commit=True)
-        return {"status": "renewed", "expires_at": new_exp}
+        return {"status": "renewed", "expires": new_exp}
 
     # If someone else is leader and still active
     if l_elect and l_elect['leader_id'] and now < l_elect['expires']:
@@ -425,7 +425,7 @@ async def leader_elect(body: ElectRequest):
     if best == body.node_id:
         new_exp = now + 12
         await run_query('UPDATE leader_election SET leader_id = ?, expires = ? WHERE id = 1', (best, new_exp), commit=True)
-        return {"status": "acquired", "expires_at": new_exp}
+        return {"status": "acquired", "expires": new_exp}
     
     return {"status": "standby", "leader_id": best}
 
