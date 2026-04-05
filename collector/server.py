@@ -3,15 +3,17 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-import sqlite3
-import datetime
-import os
-import time
-import asyncio
-import uuid
-import hashlib
-import secrets
 from typing import Optional, List
+import subprocess
+import os
+import sys
+
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+    HAS_PG = True
+except ImportError:
+    HAS_PG = False
 
 app = FastAPI(title="Access-Controlled Log Monitor")
 
@@ -23,149 +25,175 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+DATABASE_URL = os.getenv("DATABASE_URL")
 DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs.db"))
 DB_PATH = os.path.normpath(DB_PATH)
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "dc_secret_2026")
 
-def init_db():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30)
-    cursor = conn.cursor()
-    cursor.execute('PRAGMA journal_mode=WAL')
-    cursor.execute('PRAGMA synchronous=NORMAL')
-    cursor.execute('PRAGMA cache_size=-20000')  # 20MB cache
+def _get_conn():
+    if DATABASE_URL:
+        if not HAS_PG:
+            raise ImportError("psycopg2-binary is required for PostgreSQL support. Install it via pip.")
+        return psycopg2.connect(DATABASE_URL)
+    else:
+        import sqlite3
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn.execute('PRAGMA journal_mode=WAL')
+        conn.execute('PRAGMA cache_size=-10000')
+        conn.row_factory = sqlite3.Row
+        return conn
 
+def init_db():
+    conn = _get_conn()
+    is_pg = DATABASE_URL is not None
+    cursor = conn.cursor()
+
+    if not is_pg:
+        cursor.execute('PRAGMA journal_mode=WAL')
+        cursor.execute('PRAGMA synchronous=NORMAL')
+    
+    # helper for dialect-specific syntax
+    id_type = "SERIAL PRIMARY KEY" if is_pg else "INTEGER PRIMARY KEY AUTOINCREMENT"
+    text_type = "TEXT"
+    
     # Logs table
-    cursor.execute('''
+    cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp TEXT,
-            service_name TEXT,
-            host_id TEXT,
-            severity TEXT,
-            message TEXT,
-            request_id TEXT,
-            user_tag TEXT
+            id {id_type},
+            timestamp {text_type},
+            service_name {text_type},
+            host_id {text_type},
+            severity {text_type},
+            message {text_type},
+            request_id {text_type},
+            user_tag {text_type}
         )
     ''')
     
     # failure_detectors table
-    cursor.execute('''
+    cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS failure_detectors (
-            service_name TEXT PRIMARY KEY,
-            status TEXT,
-            last_heartbeat TEXT
+            service_name {text_type} PRIMARY KEY,
+            status {text_type},
+            last_heartbeat {text_type}
         )
     ''')
 
     # Users table
-    cursor.execute('''
+    cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL,
-            role TEXT DEFAULT 'user',
-            password_hash TEXT
+            id {id_type},
+            name {text_type} UNIQUE NOT NULL,
+            role {text_type} DEFAULT 'user',
+            password_hash {text_type}
         )
     ''')
 
     # Sessions table
-    cursor.execute('''
+    cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS sessions (
-            id TEXT PRIMARY KEY,
-            user_name TEXT NOT NULL,
-            service_name TEXT NOT NULL,
-            start_time TEXT NOT NULL,
-            end_time TEXT,
+            id {text_type} PRIMARY KEY,
+            user_name {text_type} NOT NULL,
+            service_name {text_type} NOT NULL,
+            start_time {text_type} NOT NULL,
+            end_time {text_type},
             is_active INTEGER DEFAULT 1
         )
     ''')
 
     # Service registry
-    cursor.execute('''
+    cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS services_registry (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT UNIQUE NOT NULL,
+            id {id_type},
+            name {text_type} UNIQUE NOT NULL,
             is_active INTEGER DEFAULT 1,
-            mode TEXT DEFAULT 'public'
+            mode {text_type} DEFAULT 'public'
         )
     ''')
 
     # Service access users
-    cursor.execute('''
+    cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS service_access_users (
-            service_name TEXT,
-            user_name TEXT,
+            service_name {text_type},
+            user_name {text_type},
             PRIMARY KEY (service_name, user_name)
         )
     ''')
 
     # Tokens table
-    cursor.execute('''
+    cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS tokens (
-            token TEXT PRIMARY KEY,
-            user_name TEXT,
-            role TEXT,
-            expires REAL
+            token {text_type} PRIMARY KEY,
+            user_name {text_type},
+            role {text_type},
+            expires DOUBLE PRECISION
         )
     ''')
 
     # Access requests table
-    cursor.execute('''
+    cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS access_requests (
-            id TEXT PRIMARY KEY,
-            user_name TEXT,
-            service_name TEXT,
-            status TEXT,
-            timestamp TEXT
+            id {text_type} PRIMARY KEY,
+            user_name {text_type},
+            service_name {text_type},
+            status {text_type},
+            timestamp {text_type}
         )
     ''')
 
     # Leader election table
-    cursor.execute('''
+    cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS leader_election (
             id INTEGER PRIMARY KEY,
-            leader_id TEXT,
-            expires REAL,
+            leader_id {text_type},
+            expires DOUBLE PRECISION,
             force_crash INTEGER DEFAULT 0
         )
     ''')
-    cursor.execute('INSERT OR IGNORE INTO leader_election (id, leader_id, expires, force_crash) VALUES (1, NULL, 0, 0)')
+    
+    if is_pg:
+        cursor.execute('INSERT INTO leader_election (id, leader_id, expires, force_crash) VALUES (1, NULL, 0, 0) ON CONFLICT (id) DO NOTHING')
+    else:
+        cursor.execute('INSERT OR IGNORE INTO leader_election (id, leader_id, expires, force_crash) VALUES (1, NULL, 0, 0)')
 
     # Performance indexes
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs(timestamp DESC)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_logs_sev ON logs(severity)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_sessions_active ON sessions(is_active)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_tokens_exp ON tokens(expires)')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_access_req_status ON access_requests(status)')
+    idx_sql = [
+        'CREATE INDEX IF NOT EXISTS idx_logs_ts ON logs(timestamp DESC)',
+        'CREATE INDEX IF NOT EXISTS idx_logs_sev ON logs(severity)',
+        'CREATE INDEX IF NOT EXISTS idx_sessions_active ON sessions(is_active)',
+        'CREATE INDEX IF NOT EXISTS idx_tokens_exp ON tokens(expires)',
+        'CREATE INDEX IF NOT EXISTS idx_access_req_status ON access_requests(status)'
+    ]
+    for sql in idx_sql: cursor.execute(sql)
 
     # Node Registry
-    cursor.execute('''
+    cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS node_registry (
-            node_id TEXT PRIMARY KEY,
+            node_id {text_type} PRIMARY KEY,
             priority INTEGER DEFAULT 0,
-            created_at REAL,
-            last_seen REAL,
-            node_status TEXT DEFAULT 'enabled'
+            created_at DOUBLE PRECISION,
+            last_seen DOUBLE PRECISION,
+            node_status {text_type} DEFAULT 'enabled'
         )
     ''')
 
     # Seed admin user
     pw_hash = hashlib.sha256(ADMIN_PASSWORD.encode()).hexdigest()
-    cursor.execute('''
-        INSERT OR IGNORE INTO users (name, role, password_hash) VALUES (?, ?, ?)
-    ''', ("admin", "admin", pw_hash))
+    if is_pg:
+        cursor.execute('INSERT INTO users (name, role, password_hash) VALUES (%s, %s, %s) ON CONFLICT (name) DO NOTHING', ("admin", "admin", pw_hash))
+    else:
+        cursor.execute('INSERT OR IGNORE INTO users (name, role, password_hash) VALUES (?, ?, ?)', ("admin", "admin", pw_hash))
 
     # Seed default services
     cursor.execute('SELECT COUNT(*) FROM services_registry')
     if cursor.fetchone()[0] == 0:
         default_services = [
-            ("file-server", "public"),
-            ("data-vault", "private"),
-            ("ml-pipeline", "protected"),
-            ("auth-service", "public"),
-            ("payment-service", "protected"),
+            ("file-server", "public"), ("data-vault", "private"), ("ml-pipeline", "protected"),
+            ("auth-service", "public"), ("payment-service", "protected"),
         ]
         for svc_name, mode in default_services:
-            cursor.execute('INSERT INTO services_registry (name, is_active, mode) VALUES (?, 1, ?)', (svc_name, mode))
+            placeholder = "%s" if is_pg else "?"
+            cursor.execute(f'INSERT INTO services_registry (name, is_active, mode) VALUES ({placeholder}, 1, {placeholder})', (svc_name, mode))
 
     conn.commit()
     conn.close()
@@ -178,30 +206,43 @@ init_db()
 def hash_password(pw: str) -> str:
     return hashlib.sha256(pw.encode()).hexdigest()
 
-def _get_conn():
-    conn = sqlite3.connect(DB_PATH, timeout=30)
-    conn.execute('PRAGMA journal_mode=WAL')
-    conn.execute('PRAGMA cache_size=-10000')
-    conn.row_factory = sqlite3.Row
-    return conn
-
 async def run_query(query: str, params: tuple = (), commit: bool = False, fetch_one: bool = False, fetch_all: bool = False):
+    is_pg = DATABASE_URL is not None
+    # Auto-translate SQL placeholders if using Postgres
+    if is_pg:
+        query = query.replace('?', '%s')
+        # Handle 'INSERT OR REPLACE' -> Postgres 'ON CONFLICT'
+        if 'INSERT OR REPLACE' in query.upper():
+            if 'TOKENS' in query.upper():
+                query = "INSERT INTO tokens (token, user_name, role, expires) VALUES (%s, %s, %s, %s) ON CONFLICT (token) DO UPDATE SET user_name=EXCLUDED.user_name, role=EXCLUDED.role, expires=EXCLUDED.expires"
+            elif 'FAILURE_DETECTORS' in query.upper():
+                query = "INSERT INTO failure_detectors (service_name, status, last_heartbeat) VALUES (%s, %s, %s) ON CONFLICT (service_name) DO UPDATE SET status=EXCLUDED.status, last_heartbeat=EXCLUDED.last_heartbeat"
+        # Handle 'INSERT OR IGNORE'
+        if 'INSERT OR IGNORE' in query.upper():
+            query = query.upper().replace('INSERT OR IGNORE INTO', 'INSERT INTO') + ' ON CONFLICT DO NOTHING'
+
     def _execute():
         conn = _get_conn()
         try:
-            cursor = conn.cursor()
+            if is_pg:
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
+            else:
+                cursor = conn.cursor()
+            
             cursor.execute(query, params)
             res = None
             if fetch_one:
                 res = cursor.fetchone()
-                if res: res = dict(res) # Convert to dict before closing
+                if res: res = dict(res)
             elif fetch_all:
                 res = [dict(r) for r in cursor.fetchall()]
+            
             if commit:
                 conn.commit()
             return res
         finally:
             conn.close()
+            
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _execute)
 
