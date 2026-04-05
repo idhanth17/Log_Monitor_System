@@ -358,12 +358,12 @@ async def get_dashboard_summary(request: Request):
         d["duration_seconds"] = int((datetime.datetime.now(datetime.timezone.utc) - start).total_seconds())
         sessions.append(d)
 
-    req_rows = await run_query('SELECT * FROM access_requests WHERE status = "pending"', fetch_all=True)
+    req_rows = await run_query("SELECT * FROM access_requests WHERE status = 'pending'", fetch_all=True)
     svc_rows = await run_query('SELECT * FROM services_registry', fetch_all=True)
     user_rows = await run_query('SELECT id, name, role FROM users ORDER BY role, name', fetch_all=True)
     
     l_row = await run_query('SELECT COUNT(*) as count FROM logs WHERE timestamp > ?', (last_min,), fetch_one=True)
-    e_row = await run_query('SELECT COUNT(*) as count FROM logs WHERE timestamp > ? AND severity = "ERROR"', (last_min,), fetch_one=True)
+    e_row = await run_query("SELECT COUNT(*) as count FROM logs WHERE timestamp > ? AND severity = 'ERROR'", (last_min,), fetch_one=True)
     metrics = {"logs_per_second": round(l_row['count'] / 60.0, 2), "error_count_60s": e_row['count']}
     
     log_rows = await run_query('SELECT * FROM logs ORDER BY timestamp DESC LIMIT 60', fetch_all=True)
@@ -548,7 +548,7 @@ async def get_registry(request: Request):
                     svc["user_access"] = "allowed"
                 else:
                     pending = await run_query(
-                        'SELECT 1 FROM access_requests WHERE service_name=? AND user_name=? AND status="pending"',
+                        "SELECT 1 FROM access_requests WHERE service_name=? AND user_name=? AND status='pending'",
                         (svc["name"], user["name"]), fetch_one=True)
                     svc["user_access"] = "pending" if pending else "denied"
             else:
@@ -651,7 +651,7 @@ async def request_access(body: RequestAccessRequest, request: Request):
         raise HTTPException(status_code=404, detail="Service not found")
     # Avoid duplicate pending requests
     existing = await run_query(
-        'SELECT 1 FROM access_requests WHERE user_name=? AND service_name=? AND status="pending"',
+        "SELECT 1 FROM access_requests WHERE user_name=? AND service_name=? AND status='pending'",
         (user["name"], body.service_name), fetch_one=True)
     if existing:
         return {"status": "already_pending"}
